@@ -1,0 +1,288 @@
+{==============================================================================}
+{  OmniPK Engine - PathingPredictor Module                                     }
+{  Predicts opponent movement and pathing.                                     }
+{  NO DRAWING - Logic only.                                                    }
+{==============================================================================}
+
+{$DEFINE OMNIPK_PATHINGPREDICTOR}
+
+type
+  TPathingIntent = (
+    piUnknown,
+    piApproaching,    // Moving toward player
+    piRetreating,     // Moving away from player
+    piKiting,         // Maintaining distance
+    piCircling,       // Moving around player
+    piStationary      // Not moving
+  );
+
+  TPredictedPath = record
+    Tiles: array of TPoint;
+    Confidence: Double;       // 0.0 - 1.0
+    Intent: TPathingIntent;
+  end;
+
+  TPathingPredictorState = record
+    OpponentPositionHistory: array of TPoint;
+    HistoryTickStamps: array of Integer;
+    PredictedPath: TPredictedPath;
+    OpponentVelocity: TPoint;  // Tiles per tick
+    LastOpponentTile: TPoint;
+    PredictedNextTile: TPoint;
+    PredictedIntent: TPathingIntent;
+    IsInitialized: Boolean;
+  end;
+
+var
+  PathingPredictorState: TPathingPredictorState;
+
+{------------------------------------------------------------------------------}
+{ GetPredictedNextTile - Returns predicted next opponent tile                  }
+{------------------------------------------------------------------------------}
+function GetPredictedNextTile: TPoint;
+begin
+  Result := PathingPredictorState.PredictedNextTile;
+end;
+
+{------------------------------------------------------------------------------}
+{ PredictNextTile - Alias for GetPredictedNextTile                             }
+{------------------------------------------------------------------------------}
+function PredictNextTile: TPoint;
+begin
+  Result := GetPredictedNextTile;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPredictedIntent - Returns predicted opponent movement intent              }
+{------------------------------------------------------------------------------}
+function GetPredictedIntent: TPathingIntent;
+begin
+  Result := PathingPredictorState.PredictedIntent;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPredictedPath - Returns full predicted path                               }
+{------------------------------------------------------------------------------}
+function GetPredictedPath: TPredictedPath;
+begin
+  Result := PathingPredictorState.PredictedPath;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentVelocity - Returns opponent movement velocity                     }
+{------------------------------------------------------------------------------}
+function GetOpponentVelocity: TPoint;
+begin
+  Result := PathingPredictorState.OpponentVelocity;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPathConfidence - Returns confidence in path prediction                    }
+{------------------------------------------------------------------------------}
+function GetPathConfidence: Double;
+begin
+  Result := PathingPredictorState.PredictedPath.Confidence;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsOpponentApproaching - Returns true if opponent is approaching              }
+{------------------------------------------------------------------------------}
+function IsOpponentApproaching: Boolean;
+begin
+  Result := PathingPredictorState.PredictedIntent = piApproaching;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsOpponentRetreating - Returns true if opponent is retreating                }
+{------------------------------------------------------------------------------}
+function IsOpponentRetreating: Boolean;
+begin
+  Result := PathingPredictorState.PredictedIntent = piRetreating;
+end;
+
+{------------------------------------------------------------------------------}
+{ RecordOpponentPosition - Record opponent position for history                }
+{------------------------------------------------------------------------------}
+procedure RecordOpponentPosition(Position: TPoint);
+var
+  Len: Integer;
+  MaxHistory: Integer;
+begin
+  MaxHistory := 20; // Keep last 20 positions
+  
+  Len := Length(PathingPredictorState.OpponentPositionHistory);
+  
+  // Remove oldest if at max
+  if Len >= MaxHistory then
+  begin
+    // Shift array
+    Move(PathingPredictorState.OpponentPositionHistory[1], 
+         PathingPredictorState.OpponentPositionHistory[0], 
+         (Len - 1) * SizeOf(TPoint));
+    Move(PathingPredictorState.HistoryTickStamps[1],
+         PathingPredictorState.HistoryTickStamps[0],
+         (Len - 1) * SizeOf(Integer));
+    Len := MaxHistory - 1;
+  end;
+  
+  SetLength(PathingPredictorState.OpponentPositionHistory, Len + 1);
+  SetLength(PathingPredictorState.HistoryTickStamps, Len + 1);
+  
+  PathingPredictorState.OpponentPositionHistory[Len] := Position;
+  PathingPredictorState.HistoryTickStamps[Len] := GetCurrentTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ CalculateVelocity - Calculate movement velocity from history                 }
+{------------------------------------------------------------------------------}
+procedure CalculateVelocity;
+var
+  Len: Integer;
+  DeltaX, DeltaY: Integer;
+  DeltaTicks: Integer;
+begin
+  Len := Length(PathingPredictorState.OpponentPositionHistory);
+  
+  if Len < 2 then
+  begin
+    PathingPredictorState.OpponentVelocity := Point(0, 0);
+    Exit;
+  end;
+  
+  DeltaX := PathingPredictorState.OpponentPositionHistory[Len - 1].X - 
+            PathingPredictorState.OpponentPositionHistory[Len - 2].X;
+  DeltaY := PathingPredictorState.OpponentPositionHistory[Len - 1].Y - 
+            PathingPredictorState.OpponentPositionHistory[Len - 2].Y;
+  DeltaTicks := PathingPredictorState.HistoryTickStamps[Len - 1] -
+                PathingPredictorState.HistoryTickStamps[Len - 2];
+  
+  if DeltaTicks > 0 then
+  begin
+    PathingPredictorState.OpponentVelocity.X := DeltaX div DeltaTicks;
+    PathingPredictorState.OpponentVelocity.Y := DeltaY div DeltaTicks;
+  end
+  else
+    PathingPredictorState.OpponentVelocity := Point(0, 0);
+end;
+
+{------------------------------------------------------------------------------}
+{ DetermineIntent - Determine opponent's movement intent                       }
+{------------------------------------------------------------------------------}
+procedure DetermineIntent;
+var
+  PlayerPos, OpponentPos: TPoint;
+  Velocity: TPoint;
+  DistanceBefore, DistanceAfter: Integer;
+begin
+  PlayerPos := GetPlayerPosition;
+  
+  if Length(PathingPredictorState.OpponentPositionHistory) < 2 then
+  begin
+    PathingPredictorState.PredictedIntent := piStationary;
+    Exit;
+  end;
+  
+  OpponentPos := PathingPredictorState.OpponentPositionHistory[
+    High(PathingPredictorState.OpponentPositionHistory)];
+  Velocity := PathingPredictorState.OpponentVelocity;
+  
+  // No movement
+  if (Velocity.X = 0) and (Velocity.Y = 0) then
+  begin
+    PathingPredictorState.PredictedIntent := piStationary;
+    Exit;
+  end;
+  
+  // Calculate if distance is increasing or decreasing
+  DistanceBefore := Max(Abs(OpponentPos.X - PlayerPos.X), 
+                        Abs(OpponentPos.Y - PlayerPos.Y));
+  DistanceAfter := Max(Abs((OpponentPos.X + Velocity.X) - PlayerPos.X),
+                       Abs((OpponentPos.Y + Velocity.Y) - PlayerPos.Y));
+  
+  if DistanceAfter < DistanceBefore then
+    PathingPredictorState.PredictedIntent := piApproaching
+  else if DistanceAfter > DistanceBefore then
+    PathingPredictorState.PredictedIntent := piRetreating
+  else
+    PathingPredictorState.PredictedIntent := piCircling;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitPathingPredictor - Initialize the pathing predictor system               }
+{------------------------------------------------------------------------------}
+procedure InitPathingPredictor;
+begin
+  SetLength(PathingPredictorState.OpponentPositionHistory, 0);
+  SetLength(PathingPredictorState.HistoryTickStamps, 0);
+  SetLength(PathingPredictorState.PredictedPath.Tiles, 0);
+  PathingPredictorState.PredictedPath.Confidence := 0.0;
+  PathingPredictorState.PredictedPath.Intent := piUnknown;
+  PathingPredictorState.OpponentVelocity := Point(0, 0);
+  PathingPredictorState.LastOpponentTile := Point(0, 0);
+  PathingPredictorState.PredictedNextTile := Point(0, 0);
+  PathingPredictorState.PredictedIntent := piUnknown;
+  PathingPredictorState.IsInitialized := True;
+  
+  WriteLn('[PathingPredictor] Initialized');
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdatePathingPredictor - Update pathing prediction (call every frame)        }
+{------------------------------------------------------------------------------}
+procedure UpdatePathingPredictor;
+var
+  CurrentOpponentPos: TPoint;
+  Velocity: TPoint;
+begin
+  if not PathingPredictorState.IsInitialized then
+    Exit;
+  
+  { Get current opponent position from MovementHelper }
+  CurrentOpponentPos := GetOpponentPosition;
+  
+  if (CurrentOpponentPos.X <> PathingPredictorState.LastOpponentTile.X) or
+     (CurrentOpponentPos.Y <> PathingPredictorState.LastOpponentTile.Y) then
+  begin
+    RecordOpponentPosition(CurrentOpponentPos);
+    PathingPredictorState.LastOpponentTile := CurrentOpponentPos;
+    CalculateVelocity;
+    DetermineIntent;
+  end
+  else
+  begin
+    { Stationary - no position change }
+    PathingPredictorState.OpponentVelocity := Point(0, 0);
+    PathingPredictorState.PredictedIntent := piStationary;
+  end;
+  
+  { Predict next tile - opponent frozen = no movement }
+  if IsOpponentFrozen then
+  begin
+    PathingPredictorState.PredictedNextTile := CurrentOpponentPos;
+    PathingPredictorState.PredictedPath.Confidence := 1.0;
+    PathingPredictorState.PredictedIntent := piStationary;
+    PathingPredictorState.OpponentVelocity := Point(0, 0);
+    Exit;
+  end;
+  
+  { Predict based on velocity - diagonal bias: OSRS allows diagonal movement }
+  Velocity := PathingPredictorState.OpponentVelocity;
+  PathingPredictorState.PredictedNextTile.X := CurrentOpponentPos.X + Velocity.X;
+  PathingPredictorState.PredictedNextTile.Y := CurrentOpponentPos.Y + Velocity.Y;
+  
+  { Build predicted path (next 3 tiles for pathing trap detection) }
+  SetLength(PathingPredictorState.PredictedPath.Tiles, 3);
+  PathingPredictorState.PredictedPath.Tiles[0] := CurrentOpponentPos;
+  PathingPredictorState.PredictedPath.Tiles[1] := PathingPredictorState.PredictedNextTile;
+  PathingPredictorState.PredictedPath.Tiles[2].X := PathingPredictorState.PredictedNextTile.X + Velocity.X;
+  PathingPredictorState.PredictedPath.Tiles[2].Y := PathingPredictorState.PredictedNextTile.Y + Velocity.Y;
+  PathingPredictorState.PredictedPath.Intent := PathingPredictorState.PredictedIntent;
+  
+  { Confidence: more history = higher, consistent direction = higher }
+  if Length(PathingPredictorState.OpponentPositionHistory) >= 5 then
+    PathingPredictorState.PredictedPath.Confidence := 0.7
+  else if Length(PathingPredictorState.OpponentPositionHistory) >= 2 then
+    PathingPredictorState.PredictedPath.Confidence := 0.5
+  else
+    PathingPredictorState.PredictedPath.Confidence := 0.2;
+end;

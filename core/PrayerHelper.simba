@@ -1,0 +1,186 @@
+{==============================================================================}
+{  OmniPK Engine - PrayerHelper Module                                         }
+{  Provides prayer recommendations and auto-swap logic.                        }
+{  NO DRAWING - Logic only.                                                    }
+{  Uses: AttackStyleDetector, GameAPI (GetActivePrayerString), TickTracker     }
+{  Config: data/config.json timing.prayer_swap_cooldown_ticks                  }
+{==============================================================================}
+
+{$DEFINE OMNIPK_PRAYERHELPER}
+
+type
+  TPrayerType = (
+    ptNone,
+    ptProtectMelee, ptProtectRanged, ptProtectMagic,
+    ptPiety, ptRigour, ptAugury, ptSmite, ptRedemption
+  );
+
+  TPrayerInfo = record
+    PrayerType: TPrayerType;
+    IsActive: Boolean;
+    DrainRate: Double;
+  end;
+
+  TPrayerHelperState = record
+    CurrentPrayer: TPrayerType;
+    RecommendedPrayer: TPrayerType;
+    ActivePrayers: array of TPrayerInfo;
+    PrayerPoints: Integer;
+    MaxPrayerPoints: Integer;
+    ShouldSwap: Boolean;
+    LastSwapTick: Integer;
+    SwapCooldownTicks: Integer;
+    IsPrayerMismatch: Boolean;
+    IsInitialized: Boolean;
+  end;
+
+var
+  PrayerHelperState: TPrayerHelperState;
+
+{------------------------------------------------------------------------------}
+{ StringToPrayerType - Map game prayer string to TPrayerType                   }
+{------------------------------------------------------------------------------}
+function StringToPrayerType(S: String): TPrayerType;
+begin
+  case LowerCase(S) of
+    'melee': Result := ptProtectMelee;
+    'range', 'ranged': Result := ptProtectRanged;
+    'mage', 'magic': Result := ptProtectMagic;
+  else
+    Result := ptNone;
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ RecommendedPrayer - Returns the recommended protection prayer                }
+{------------------------------------------------------------------------------}
+function RecommendedPrayer: TPrayerType;
+begin
+  Result := PrayerHelperState.RecommendedPrayer;
+end;
+
+{------------------------------------------------------------------------------}
+{ ShouldAutoSwap - Returns true if prayer should be swapped now                }
+{------------------------------------------------------------------------------}
+function ShouldAutoSwap: Boolean;
+var
+  TicksSinceSwap: Integer;
+begin
+  TicksSinceSwap := GetCurrentTick - PrayerHelperState.LastSwapTick;
+  Result := PrayerHelperState.ShouldSwap and 
+            (TicksSinceSwap >= PrayerHelperState.SwapCooldownTicks);
+end;
+
+{------------------------------------------------------------------------------}
+{ AutoSwapPrayer - Returns target prayer for swap (external system executes)   }
+{------------------------------------------------------------------------------}
+function AutoSwapPrayer: TPrayerType;
+begin
+  Result := PrayerHelperState.RecommendedPrayer;
+  if ShouldAutoSwap then
+  begin
+    PrayerHelperState.LastSwapTick := GetCurrentTick;
+    PrayerHelperState.ShouldSwap := False;
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetCurrentPrayer - Returns currently active protection prayer                }
+{------------------------------------------------------------------------------}
+function GetCurrentPrayer: TPrayerType;
+begin
+  Result := PrayerHelperState.CurrentPrayer;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsPrayerMismatch - Returns true if wrong prayer is active                    }
+{------------------------------------------------------------------------------}
+function IsPrayerMismatch: Boolean;
+begin
+  Result := PrayerHelperState.IsPrayerMismatch;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPrayerPoints - Returns current prayer points                              }
+{------------------------------------------------------------------------------}
+function GetPrayerPoints: Integer;
+begin
+  Result := PrayerHelperState.PrayerPoints;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPrayerDrainRate - Returns total prayer drain per tick                     }
+{------------------------------------------------------------------------------}
+function GetPrayerDrainRate: Double;
+var
+  i: Integer;
+begin
+  Result := 0.0;
+  for i := 0 to High(PrayerHelperState.ActivePrayers) do
+    if PrayerHelperState.ActivePrayers[i].IsActive then
+      Result := Result + PrayerHelperState.ActivePrayers[i].DrainRate;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetProtectionPrayerForStyle - Returns protection prayer for attack style     }
+{------------------------------------------------------------------------------}
+function GetProtectionPrayerForStyle(Style: TAttackStyle): TPrayerType;
+begin
+  case Style of
+    asMelee: Result := ptProtectMelee;
+    asRanged: Result := ptProtectRanged;
+    asMagic: Result := ptProtectMagic;
+  else
+    Result := ptNone;
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitPrayerHelper - Initialize the prayer helper system                       }
+{------------------------------------------------------------------------------}
+procedure InitPrayerHelper;
+begin
+  PrayerHelperState.CurrentPrayer := ptNone;
+  PrayerHelperState.RecommendedPrayer := ptNone;
+  SetLength(PrayerHelperState.ActivePrayers, 0);
+  PrayerHelperState.PrayerPoints := 99;
+  PrayerHelperState.MaxPrayerPoints := 99;
+  PrayerHelperState.ShouldSwap := False;
+  PrayerHelperState.LastSwapTick := 0;
+  PrayerHelperState.SwapCooldownTicks := 1;
+  PrayerHelperState.IsPrayerMismatch := False;
+  PrayerHelperState.IsInitialized := True;
+  
+  WriteLn('[PrayerHelper] Initialized');
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdatePrayerHelper - Update prayer recommendations (call every frame)        }
+{------------------------------------------------------------------------------}
+procedure UpdatePrayerHelper;
+var
+  OpponentStyle: TAttackStyle;
+  ActiveStr: String;
+begin
+  if not PrayerHelperState.IsInitialized then Exit;
+  
+  { Read current prayer from game }
+  ActiveStr := GetActivePrayerString;
+  PrayerHelperState.CurrentPrayer := StringToPrayerType(ActiveStr);
+  
+  { Get opponent's attack style from AttackStyleDetector }
+  OpponentStyle := GetOpponentAttackStyle;
+  
+  { Determine recommended prayer }
+  PrayerHelperState.RecommendedPrayer := GetProtectionPrayerForStyle(OpponentStyle);
+  
+  { Check for prayer mismatch }
+  PrayerHelperState.IsPrayerMismatch := 
+    (PrayerHelperState.CurrentPrayer <> PrayerHelperState.RecommendedPrayer) and
+    (PrayerHelperState.RecommendedPrayer <> ptNone);
+  
+  PrayerHelperState.ShouldSwap := PrayerHelperState.IsPrayerMismatch;
+  
+  { TODO: Read prayer points from game when API available }
+  { PrayerHelperState.PrayerPoints := GetPrayerPointsFromGame; }
+end;

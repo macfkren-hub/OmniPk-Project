@@ -1,0 +1,103 @@
+{
+  "_comment": "OmniPK Engine - Weapon Profiles",
+  "_version": "1.0.0",
+  "_description": "Weapon stats, attack speeds, and max hits for PvP analysis",
+  
+  "weapons": {
+    "abyssal_whip": {
+      "name": "Abyssal Whip",
+      "attack_speed": 4,
+      "attack_style": "melee",
+      "max_hit_base": 47,
+      "is_spec_weapon": true,
+      "spec_drain": 50,
+      "spec_effect": "energy_drain"
+    },
+    "dragon_scimitar": {
+      "name": "Dragon Scimitar",
+      "attack_speed": 4,
+      "attack_style": "melee",
+      "max_hit_base": 44,
+      "is_spec_weapon": true,
+      "spec_drain": 55,
+      "spec_effect": "disable_prayers"
+    },
+    "armadyl_godsword": {
+      "name": "Armadyl Godsword",
+      "attack_speed": 6,
+      "attack_style": "melee",
+      "max_hit_base": 60,
+      "is_spec_weapon": true,
+      "spec_drain": 50,
+      "spec_effect": "damage_boost_125"
+    },
+    "dragon_claws": {
+      "name": "Dragon Claws",
+      "attack_speed": 4,
+      "attack_style": "melee",
+      "max_hit_base": 41,
+      "is_spec_weapon": true,
+      "spec_drain": 50,
+      "spec_effect": "multi_hit"
+    },
+    "granite_maul": {
+      "name": "Granite Maul",
+      "attack_speed": 7,
+      "attack_style": "melee",
+      "max_hit_base": 42,
+      "is_spec_weapon": true,
+      "spec_drain": 50,
+      "spec_effect": "instant_attack"
+    },
+    "dark_bow": {
+      "name": "Dark Bow",
+      "attack_speed": 9,
+      "attack_style": "ranged",
+      "max_hit_base": 48,
+      "is_spec_weapon": true,
+      "spec_drain": 55,
+      "spec_effect": "double_arrow"
+    },
+    "magic_shortbow": {
+      "name": "Magic Shortbow",
+      "attack_speed": 3,
+      "attack_style": "ranged",
+      "max_hit_base": 31,
+      "is_spec_weapon": true,
+      "spec_drain": 55,
+      "spec_effect": "double_shot"
+    },
+    "toxic_blowpipe": {
+      "name": "Toxic Blowpipe",
+      "attack_speed": 2,
+      "attack_style": "ranged",
+      "max_hit_base": 31,
+      "is_spec_weapon": true,
+      "spec_drain": 50,
+      "spec_effect": "heal"
+    },
+    "staff_of_the_dead": {
+      "name": "Staff of the Dead",
+      "attack_speed": 4,
+      "attack_style": "magic",
+      "max_hit_base": 25,
+      "is_spec_weapon": true,
+      "spec_drain": 100,
+      "spec_effect": "melee_protection"
+    },
+    "volatile_nightmare_staff": {
+      "name": "Volatile Nightmare Staff",
+      "attack_speed": 5,
+      "attack_style": "magic",
+      "max_hit_base": 66,
+      "is_spec_weapon": true,
+      "spec_drain": 55,
+      "spec_effect": "high_damage_spell"
+    }
+  },
+  
+  "defaults": {
+    "attack_speed": 4,
+    "max_hit_base": 40
+  }
+}

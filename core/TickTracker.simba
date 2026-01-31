@@ -1,0 +1,115 @@
+{==============================================================================}
+{  OmniPK Engine - TickTracker Module                                          }
+{  The ONLY timing source for the entire system.                               }
+{  All other modules must use this for tick-based timing.                      }
+{==============================================================================}
+
+{$DEFINE OMNIPK_TICKTRACKER}
+
+const
+  TICK_MS = 600; // OSRS game tick duration in milliseconds
+
+type
+  TTickTrackerState = record
+    StartTime: UInt64;      // Time when tracking started
+    CurrentTick: Integer;   // Current game tick count
+    LastTickTime: UInt64;   // Time of last tick transition
+    TickProgress: Double;   // Progress through current tick (0.0 - 1.0)
+    IsInitialized: Boolean; // Whether module has been initialized
+  end;
+
+var
+  TickTrackerState: TTickTrackerState;
+
+{------------------------------------------------------------------------------}
+{ GetTickMs - Returns the tick duration in milliseconds                        }
+{------------------------------------------------------------------------------}
+function GetTickMs: Integer;
+begin
+  Result := TICK_MS;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetCurrentTick - Returns the current game tick count                         }
+{------------------------------------------------------------------------------}
+function GetCurrentTick: Integer;
+begin
+  Result := TickTrackerState.CurrentTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetTickProgress - Returns progress through current tick (0.0 - 1.0)          }
+{------------------------------------------------------------------------------}
+function GetTickProgress: Double;
+begin
+  Result := TickTrackerState.TickProgress;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetStartTime - Returns the time tracking started                             }
+{------------------------------------------------------------------------------}
+function GetStartTime: UInt64;
+begin
+  Result := TickTrackerState.StartTime;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetTicksElapsed - Returns ticks elapsed since a given tick                   }
+{------------------------------------------------------------------------------}
+function GetTicksElapsed(FromTick: Integer): Integer;
+begin
+  Result := TickTrackerState.CurrentTick - FromTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsNewTick - Returns true if we just transitioned to a new tick               }
+{------------------------------------------------------------------------------}
+function IsNewTick: Boolean;
+var
+  PreviousTick: Integer;
+begin
+  PreviousTick := (TickTrackerState.LastTickTime - TickTrackerState.StartTime) div TICK_MS;
+  Result := TickTrackerState.CurrentTick > PreviousTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitTickTracker - Initialize the tick tracking system                        }
+{------------------------------------------------------------------------------}
+procedure InitTickTracker;
+begin
+  TickTrackerState.StartTime := GetTimeRunning;
+  TickTrackerState.CurrentTick := 0;
+  TickTrackerState.LastTickTime := TickTrackerState.StartTime;
+  TickTrackerState.TickProgress := 0.0;
+  TickTrackerState.IsInitialized := True;
+  
+  WriteLn('[TickTracker] Initialized at time: ', TickTrackerState.StartTime);
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdateTickTracker - Update tick state (call every frame)                     }
+{------------------------------------------------------------------------------}
+procedure UpdateTickTracker;
+var
+  CurrentTime: UInt64;
+  ElapsedMs: UInt64;
+  NewTick: Integer;
+begin
+  if not TickTrackerState.IsInitialized then
+    Exit;
+    
+  CurrentTime := GetTimeRunning;
+  ElapsedMs := CurrentTime - TickTrackerState.StartTime;
+  
+  // Calculate current tick
+  NewTick := ElapsedMs div TICK_MS;
+  
+  // Update last tick time if we transitioned
+  if NewTick > TickTrackerState.CurrentTick then
+    TickTrackerState.LastTickTime := CurrentTime;
+  
+  TickTrackerState.CurrentTick := NewTick;
+  
+  // Calculate progress through current tick (0.0 to 1.0)
+  TickTrackerState.TickProgress := (ElapsedMs mod TICK_MS) / TICK_MS;
+end;

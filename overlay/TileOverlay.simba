@@ -1,0 +1,60 @@
+{==============================================================================}
+{  OmniPK Engine - TileOverlay Module                                          }
+{  Draws tile highlights for movement. Reads from MovementHelper.              }
+{  VISUALS ONLY - No logic, no state modification.                             }
+{==============================================================================}
+
+{$DEFINE OMNIPK_TILEOVERLAY}
+
+const
+  TILE_COLOR_SAFE     = $00FF00;
+  TILE_COLOR_CAUTION  = $00FFFF;
+  TILE_COLOR_DANGER   = $4444FF;
+  TILE_COLOR_RECOMMENDED = $FFFF00;
+
+procedure DrawTileOverlay;
+var
+  RecTile, PlayerPos, OppPos: TPoint;
+  ScreenPt: TPoint;
+  Dist: Integer;
+begin
+  RecTile := GetRecommendedTile;
+  PlayerPos := GetPlayerPosition;
+  OppPos := GetOpponentPosition;
+  
+  { Only draw if we have valid positions }
+  if (PlayerPos.X = 0) and (PlayerPos.Y = 0) then Exit;
+  
+  { Recommended tile - highlight }
+  if (RecTile.X <> 0) or (RecTile.Y <> 0) then
+  begin
+    if (RecTile.X <> PlayerPos.X) or (RecTile.Y <> PlayerPos.Y) then
+    begin
+      ScreenPt := OmniPK_WorldToScreen(RecTile.X, RecTile.Y);
+      OmniPK_DrawRect(ScreenPt.X - 8, ScreenPt.Y - 8, 16, 16, 
+        TILE_COLOR_RECOMMENDED);
+    end;
+  end;
+  
+  { Player tile - subtle indicator when frozen }
+  if IsPlayerFrozen then
+  begin
+    ScreenPt := OmniPK_WorldToScreen(PlayerPos.X, PlayerPos.Y);
+    OmniPK_DrawRect(ScreenPt.X - 6, ScreenPt.Y - 6, 12, 12, TILE_COLOR_CAUTION);
+  end;
+  
+  { Opponent tile - danger zone }
+  if (OppPos.X <> 0) or (OppPos.Y <> 0) then
+  begin
+    ScreenPt := OmniPK_WorldToScreen(OppPos.X, OppPos.Y);
+    OmniPK_DrawRect(ScreenPt.X - 4, ScreenPt.Y - 4, 8, 8, TILE_COLOR_DANGER);
+  end;
+  
+  Dist := GetDistanceToOpponent;
+  if Dist <= 1 then
+  begin
+    { Melee range - draw danger zone around opponent }
+    ScreenPt := OmniPK_WorldToScreen(OppPos.X, OppPos.Y);
+    OmniPK_DrawRect(ScreenPt.X - 16, ScreenPt.Y - 16, 32, 32, TILE_COLOR_DANGER);
+  end;
+end;

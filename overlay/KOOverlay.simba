@@ -1,0 +1,81 @@
+{==============================================================================}
+{  OmniPK Engine - KOOverlay Module                                            }
+{  KO warnings. Reads from KOAnalyzer.                                         }
+{  VISUALS ONLY - No logic, no state modification.                             }
+{==============================================================================}
+
+{$DEFINE OMNIPK_KOOVERLAY}
+
+const
+  KO_COLOR_NONE     = $FFFFFF;
+  KO_COLOR_LOW      = $00FF00;
+  KO_COLOR_MEDIUM   = $00FFFF;
+  KO_COLOR_HIGH     = $00A5FF;
+  KO_COLOR_CRITICAL = $4444FF;
+
+const
+  KO_RIGHT_X = 750;
+  KO_TOP_Y = 10;
+  KO_LINE_HEIGHT = 20;
+
+function GetKOThreatColor(ThreatLevel: TKOThreatLevel): Integer;
+begin
+  case ThreatLevel of
+    ktNone: Result := KO_COLOR_NONE;
+    ktLow: Result := KO_COLOR_LOW;
+    ktMedium: Result := KO_COLOR_MEDIUM;
+    ktHigh: Result := KO_COLOR_HIGH;
+    ktCritical: Result := KO_COLOR_CRITICAL;
+  else
+    Result := KO_COLOR_NONE;
+  end;
+end;
+
+procedure DrawKOOverlay;
+var
+  Y: Integer;
+  ThreatLevel: TKOThreatLevel;
+  ThreatColor: Integer;
+  ThreatText, RiskText, EatText: String;
+begin
+  Y := KO_TOP_Y;
+  
+  ThreatLevel := GetKOThreatLevel;
+  ThreatColor := GetKOThreatColor(ThreatLevel);
+  
+  { Threat level - context-aware: only prominent when elevated }
+  case ThreatLevel of
+    ktNone: ThreatText := 'SAFE';
+    ktLow: ThreatText := 'LOW';
+    ktMedium: ThreatText := 'CAUTION';
+    ktHigh: ThreatText := 'DANGER';
+    ktCritical: ThreatText := 'CRITICAL';
+  else
+    ThreatText := '---';
+  end;
+  
+  OmniPK_DrawText(KO_RIGHT_X, Y, ThreatText, ThreatColor);
+  Y := Y + KO_LINE_HEIGHT;
+  
+  { Risk score bar indicator }
+  RiskText := Format('Risk: %.0f%%', [GetKORiskScore * 100]);
+  OmniPK_DrawText(KO_RIGHT_X, Y, RiskText, ThreatColor);
+  Y := Y + KO_LINE_HEIGHT;
+  
+  { KO window active }
+  if IsKOWindowActive then
+  begin
+    OmniPK_DrawText(KO_RIGHT_X, Y, 'KO WINDOW', KO_COLOR_CRITICAL);
+    Y := Y + KO_LINE_HEIGHT;
+    RiskText := Format('Dmg: %d', [GetPotentialDamage]);
+    OmniPK_DrawText(KO_RIGHT_X, Y, RiskText, KO_COLOR_CRITICAL);
+    Y := Y + KO_LINE_HEIGHT;
+  end;
+  
+  { Eat warning }
+  if ShouldEatNow then
+  begin
+    EatText := 'EAT NOW!';
+    OmniPK_DrawText(KO_RIGHT_X, Y, EatText, KO_COLOR_CRITICAL);
+  end;
+end;

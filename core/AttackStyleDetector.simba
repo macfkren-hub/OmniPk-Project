@@ -1,0 +1,293 @@
+{==============================================================================}
+{  OmniPK Engine - AttackStyleDetector Module                                  }
+{  Detects opponent's current attack style and weapon.                         }
+{  NO DRAWING - Logic only.                                                    }
+{  Uses: GameAPI (GetOpponentAnimation), TickTracker                           }
+{  Config: data/config.json attack_detection, data/weapon_profiles.json       }
+{==============================================================================}
+
+{$DEFINE OMNIPK_ATTACKSTYLEDETECTOR}
+
+type
+  TAttackStyle = (
+    asUnknown,
+    asMelee,
+    asRanged,
+    asMagic
+  );
+
+  TCombatStyle = (
+    csUnknown,
+    csAccurate, csAggressive, csDefensive, csControlled,
+    csRapid, csLongrange,
+    csStandard, csDefensiveCasting
+  );
+
+  TWeaponInfo = record
+    Name: String;
+    AttackSpeed: Integer;
+    MaxHit: Integer;
+    AttackStyle: TAttackStyle;
+    IsSpecWeapon: Boolean;
+    SpecDrain: Integer;
+  end;
+
+  TAttackStyleDetectorState = record
+    OpponentAttackStyle: TAttackStyle;
+    OpponentCombatStyle: TCombatStyle;
+    OpponentWeapon: TWeaponInfo;
+    LastAttackTick: Integer;
+    LastAttackAnimation: Integer;
+    AttackCooldownTicks: Integer;
+    SpecBarPercent: Integer;
+    IsSpecActive: Boolean;
+    IsInitialized: Boolean;
+  end;
+
+var
+  AttackStyleDetectorState: TAttackStyleDetectorState;
+
+{------------------------------------------------------------------------------}
+{ Animation ID sets - sync with config.json attack_detection                   }
+{------------------------------------------------------------------------------}
+const
+  MELEE_ANIM_COUNT = 10;
+  MELEE_ANIMS: array [0..MELEE_ANIM_COUNT-1] of Integer = (
+    380, 381, 386, 395, 414, 422, 423, 451, 1062, 1658
+  );
+  RANGED_ANIM_COUNT = 5;
+  RANGED_ANIMS: array [0..RANGED_ANIM_COUNT-1] of Integer = (
+    426, 1074, 2503, 4230, 4261
+  );
+  MAGIC_ANIM_COUNT = 6;
+  MAGIC_ANIMS: array [0..MAGIC_ANIM_COUNT-1] of Integer = (
+    711, 1162, 1167, 1978, 1979, 7855
+  );
+
+{------------------------------------------------------------------------------}
+{ IsMeleeAnimation - Check if animation is melee attack                        }
+{------------------------------------------------------------------------------}
+function IsMeleeAnimation(AnimId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to MELEE_ANIM_COUNT - 1 do
+    if MELEE_ANIMS[i] = AnimId then begin Result := True; Exit; end;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsRangedAnimation - Check if animation is ranged attack                      }
+{------------------------------------------------------------------------------}
+function IsRangedAnimation(AnimId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to RANGED_ANIM_COUNT - 1 do
+    if RANGED_ANIMS[i] = AnimId then begin Result := True; Exit; end;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsMagicAnimation - Check if animation is magic attack                        }
+{------------------------------------------------------------------------------}
+function IsMagicAnimation(AnimId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to MAGIC_ANIM_COUNT - 1 do
+    if MAGIC_ANIMS[i] = AnimId then begin Result := True; Exit; end;
+end;
+
+{------------------------------------------------------------------------------}
+{ AnimationToStyle - Map animation ID to attack style                          }
+{------------------------------------------------------------------------------}
+function AnimationToStyle(AnimId: Integer): TAttackStyle;
+begin
+  if AnimId = 0 then Result := asUnknown
+  else if IsMeleeAnimation(AnimId) then Result := asMelee
+  else if IsRangedAnimation(AnimId) then Result := asRanged
+  else if IsMagicAnimation(AnimId) then Result := asMagic
+  else Result := asUnknown;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentAttackStyle - Returns opponent's current attack style             }
+{------------------------------------------------------------------------------}
+function GetOpponentAttackStyle: TAttackStyle;
+begin
+  Result := AttackStyleDetectorState.OpponentAttackStyle;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentStyle - Alias for GetOpponentAttackStyle                          }
+{------------------------------------------------------------------------------}
+function GetOpponentStyle: TAttackStyle;
+begin
+  Result := GetOpponentAttackStyle;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsMelee - Returns true if opponent is using melee                            }
+{------------------------------------------------------------------------------}
+function IsMelee: Boolean;
+begin
+  Result := AttackStyleDetectorState.OpponentAttackStyle = asMelee;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsRange - Returns true if opponent is using ranged                           }
+{------------------------------------------------------------------------------}
+function IsRange: Boolean;
+begin
+  Result := AttackStyleDetectorState.OpponentAttackStyle = asRanged;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsMage - Returns true if opponent is using magic                             }
+{------------------------------------------------------------------------------}
+function IsMage: Boolean;
+begin
+  Result := AttackStyleDetectorState.OpponentAttackStyle = asMagic;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentCombatStyle - Returns opponent's specific combat style            }
+{------------------------------------------------------------------------------}
+function GetOpponentCombatStyle: TCombatStyle;
+begin
+  Result := AttackStyleDetectorState.OpponentCombatStyle;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentWeapon - Returns info about opponent's weapon                     }
+{------------------------------------------------------------------------------}
+function GetOpponentWeapon: TWeaponInfo;
+begin
+  Result := AttackStyleDetectorState.OpponentWeapon;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentLastAttackTick - Returns tick when opponent last attacked         }
+{------------------------------------------------------------------------------}
+function GetOpponentLastAttackTick: Integer;
+begin
+  Result := AttackStyleDetectorState.LastAttackTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetTicksSinceLastAttack - Returns ticks since opponent's last attack         }
+{------------------------------------------------------------------------------}
+function GetTicksSinceLastAttack: Integer;
+begin
+  Result := GetCurrentTick - AttackStyleDetectorState.LastAttackTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsOpponentAttackReady - Returns true if opponent can attack next tick        }
+{------------------------------------------------------------------------------}
+function IsOpponentAttackReady: Boolean;
+begin
+  Result := GetTicksSinceLastAttack >= AttackStyleDetectorState.AttackCooldownTicks;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetAttackCooldownRemaining - Returns ticks until opponent can attack         }
+{------------------------------------------------------------------------------}
+function GetAttackCooldownRemaining: Integer;
+begin
+  Result := AttackStyleDetectorState.AttackCooldownTicks - GetTicksSinceLastAttack;
+  if Result < 0 then Result := 0;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsSpecActive - Returns true if opponent has special attack active            }
+{------------------------------------------------------------------------------}
+function IsSpecActive: Boolean;
+begin
+  Result := AttackStyleDetectorState.IsSpecActive;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentSpecPercent - Returns opponent's spec bar percentage              }
+{------------------------------------------------------------------------------}
+function GetOpponentSpecPercent: Integer;
+begin
+  Result := AttackStyleDetectorState.SpecBarPercent;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitAttackStyleDetector - Initialize the attack style detection system       }
+{------------------------------------------------------------------------------}
+procedure InitAttackStyleDetector;
+begin
+  AttackStyleDetectorState.OpponentAttackStyle := asUnknown;
+  AttackStyleDetectorState.OpponentCombatStyle := csUnknown;
+  AttackStyleDetectorState.OpponentWeapon.Name := '';
+  AttackStyleDetectorState.OpponentWeapon.AttackSpeed := 4;
+  AttackStyleDetectorState.OpponentWeapon.MaxHit := 50;
+  AttackStyleDetectorState.OpponentWeapon.AttackStyle := asUnknown;
+  AttackStyleDetectorState.OpponentWeapon.IsSpecWeapon := False;
+  AttackStyleDetectorState.OpponentWeapon.SpecDrain := 50;
+  AttackStyleDetectorState.LastAttackTick := 0;
+  AttackStyleDetectorState.LastAttackAnimation := 0;
+  AttackStyleDetectorState.AttackCooldownTicks := 4;
+  AttackStyleDetectorState.SpecBarPercent := 100;
+  AttackStyleDetectorState.IsSpecActive := False;
+  AttackStyleDetectorState.IsInitialized := True;
+  
+  WriteLn('[AttackStyleDetector] Initialized');
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdateAttackStyleDetector - Update attack style detection (call every frame) }
+{------------------------------------------------------------------------------}
+procedure UpdateAttackStyleDetector;
+var
+  AnimId: Integer;
+  NewStyle: TAttackStyle;
+  CurrentTick: Integer;
+begin
+  if not AttackStyleDetectorState.IsInitialized then Exit;
+  
+  CurrentTick := GetCurrentTick;
+  AnimId := GetOpponentAnimation;
+  
+  { Detect new attack: animation changed to an attack animation }
+  if AnimId <> 0 then
+  begin
+    NewStyle := AnimationToStyle(AnimId);
+    if NewStyle <> asUnknown then
+    begin
+      { New attack detected }
+      if AnimId <> AttackStyleDetectorState.LastAttackAnimation then
+      begin
+        AttackStyleDetectorState.LastAttackTick := CurrentTick;
+        AttackStyleDetectorState.LastAttackAnimation := AnimId;
+        AttackStyleDetectorState.OpponentAttackStyle := NewStyle;
+        AttackStyleDetectorState.OpponentWeapon.AttackStyle := NewStyle;
+        
+        { Set cooldown based on weapon type }
+        case NewStyle of
+          asMelee: AttackStyleDetectorState.AttackCooldownTicks := 4;
+          asRanged: AttackStyleDetectorState.AttackCooldownTicks := 5;
+          asMagic: AttackStyleDetectorState.AttackCooldownTicks := 5;
+        else
+          AttackStyleDetectorState.AttackCooldownTicks := 4;
+        end;
+        
+        { Max hit defaults by style }
+        case NewStyle of
+          asMelee: AttackStyleDetectorState.OpponentWeapon.MaxHit := 50;
+          asRanged: AttackStyleDetectorState.OpponentWeapon.MaxHit := 48;
+          asMagic: AttackStyleDetectorState.OpponentWeapon.MaxHit := 30;
+        else
+          AttackStyleDetectorState.OpponentWeapon.MaxHit := 40;
+        end;
+      end;
+    end;
+  end
+  else
+    AttackStyleDetectorState.LastAttackAnimation := 0;
+end;

@@ -1,0 +1,344 @@
+{==============================================================================}
+{  OmniPK Engine - PatternReader Module                                        }
+{  Learns and predicts opponent behavior patterns.                             }
+{  Persists pattern data to pattern_memory.json.                               }
+{  NO DRAWING - Logic only.                                                    }
+{  Uses: GameAPI (DidOpponentEatThisTick, GetOpponentHPPercent),               }
+{        AttackStyleDetector, TickTracker                                      }
+{==============================================================================}
+
+{$DEFINE OMNIPK_PATTERNREADER}
+
+const
+  PATTERN_MEMORY_PATH = 'data/pattern_memory.json';
+  MAX_EAT_HISTORY = 50;
+  MAX_ATTACK_HISTORY = 100;
+  STYLE_UNKNOWN = -1;
+
+type
+  TEatPattern = record
+    HPThreshold: Integer;
+    EatTick: Integer;
+    FoodType: String;
+  end;
+
+  TAttackPattern = record
+    Style: TAttackStyle;
+    Weapon: String;
+    FollowUpStyle: TAttackStyle;
+    AttackTick: Integer;
+    TickDelay: Integer;
+  end;
+
+  TPatternReaderState = record
+    OpponentName: String;
+    EatHistory: array of TEatPattern;
+    AttackHistory: array of TAttackPattern;
+    AverageEatHP: Integer;
+    PanicThreshold: Integer;
+    PredictedNextStyle: TAttackStyle;
+    StyleSwitchProbability: Double;
+    TotalObservations: Integer;
+    LastEatDetectedTick: Integer;
+    LastRecordedAttackTick: Integer;
+    IsInitialized: Boolean;
+  end;
+
+var
+  PatternReaderState: TPatternReaderState;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentEatRhythm - Returns average ticks between eating                  }
+{------------------------------------------------------------------------------}
+function GetOpponentEatRhythm: Integer;
+var
+  i, TotalDelay, Count: Integer;
+begin
+  Result := 5; { Default }
+  TotalDelay := 0;
+  Count := 0;
+  
+  for i := 1 to High(PatternReaderState.EatHistory) do
+  begin
+    TotalDelay := TotalDelay + 
+      (PatternReaderState.EatHistory[i].EatTick - 
+       PatternReaderState.EatHistory[i-1].EatTick);
+    Inc(Count);
+  end;
+  
+  if Count > 0 then
+    Result := TotalDelay div Count;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentPanicThreshold - Returns HP at which opponent panic eats          }
+{------------------------------------------------------------------------------}
+function GetOpponentPanicThreshold: Integer;
+begin
+  Result := PatternReaderState.PanicThreshold;
+  if Result <= 0 then Result := 25;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetAverageEatHP - Returns average HP when opponent eats                      }
+{------------------------------------------------------------------------------}
+function GetAverageEatHP: Integer;
+begin
+  Result := PatternReaderState.AverageEatHP;
+  if Result <= 0 then Result := 50;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPredictedNextStyle - Returns predicted next attack style                  }
+{------------------------------------------------------------------------------}
+function GetPredictedNextStyle: TAttackStyle;
+begin
+  Result := PatternReaderState.PredictedNextStyle;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetStyleSwitchProbability - Returns probability of style switch              }
+{------------------------------------------------------------------------------}
+function GetStyleSwitchProbability: Double;
+begin
+  Result := PatternReaderState.StyleSwitchProbability;
+end;
+
+{------------------------------------------------------------------------------}
+{ RecordEatEvent - Record an observed eat event                                }
+{------------------------------------------------------------------------------}
+procedure RecordEatEvent(HP: Integer; FoodType: String);
+var
+  NewPattern: TEatPattern;
+  Len: Integer;
+begin
+  NewPattern.HPThreshold := HP;
+  NewPattern.EatTick := GetCurrentTick;
+  NewPattern.FoodType := FoodType;
+  
+  Len := Length(PatternReaderState.EatHistory);
+  if Len >= MAX_EAT_HISTORY then
+  begin
+    Move(PatternReaderState.EatHistory[1], PatternReaderState.EatHistory[0], 
+         (Len - 1) * SizeOf(TEatPattern));
+    Len := MAX_EAT_HISTORY - 1;
+  end;
+  SetLength(PatternReaderState.EatHistory, Len + 1);
+  PatternReaderState.EatHistory[Len] := NewPattern;
+  
+  if (HP < PatternReaderState.PanicThreshold) or 
+     (PatternReaderState.PanicThreshold = 0) then
+    PatternReaderState.PanicThreshold := HP;
+end;
+
+{------------------------------------------------------------------------------}
+{ RecordAttackEvent - Record an observed attack event                          }
+{------------------------------------------------------------------------------}
+procedure RecordAttackEvent(Style: TAttackStyle; Weapon: String);
+var
+  NewPattern: TAttackPattern;
+  Len: Integer;
+  CurrentTick: Integer;
+begin
+  CurrentTick := GetCurrentTick;
+  NewPattern.Style := Style;
+  NewPattern.Weapon := Weapon;
+  NewPattern.FollowUpStyle := asUnknown;
+  NewPattern.AttackTick := CurrentTick;
+  NewPattern.TickDelay := 0;
+  
+  Len := Length(PatternReaderState.AttackHistory);
+  if Len > 0 then
+  begin
+    PatternReaderState.AttackHistory[Len - 1].FollowUpStyle := Style;
+    PatternReaderState.AttackHistory[Len - 1].TickDelay :=
+      CurrentTick - PatternReaderState.AttackHistory[Len - 1].AttackTick;
+  end;
+  
+  if Len >= MAX_ATTACK_HISTORY then
+  begin
+    Move(PatternReaderState.AttackHistory[1], PatternReaderState.AttackHistory[0],
+         (Len - 1) * SizeOf(TAttackPattern));
+    Len := MAX_ATTACK_HISTORY - 1;
+  end;
+  SetLength(PatternReaderState.AttackHistory, Len + 1);
+  PatternReaderState.AttackHistory[Len] := NewPattern;
+  
+  Inc(PatternReaderState.TotalObservations);
+end;
+
+{------------------------------------------------------------------------------}
+{ LoadPatternMemory - Load pattern data from JSON file                         }
+{------------------------------------------------------------------------------}
+procedure LoadPatternMemory;
+var
+  S: String;
+  P, P2, PColon: Integer;
+  ValStr: String;
+begin
+  if not FileExists(PATTERN_MEMORY_PATH) then Exit;
+  
+  try
+    S := ReadFile(PATTERN_MEMORY_PATH);
+    
+    P := Pos('"panic_threshold"', S);
+    if P > 0 then
+    begin
+      PColon := Pos(':', Copy(S, P, Length(S) - P + 1));
+      if PColon > 0 then
+      begin
+        P := P + PColon - 1;
+        P2 := Pos(',', Copy(S, P, Length(S) - P + 1));
+        if P2 > 0 then P2 := P + P2 - 1
+        else begin P2 := Pos('}', Copy(S, P, Length(S) - P + 1)); if P2 > 0 then P2 := P + P2 - 1; end;
+        if P2 > 0 then
+        begin
+          ValStr := Trim(Copy(S, P + 1, P2 - P - 1));
+          PatternReaderState.PanicThreshold := StrToIntDef(ValStr, 30);
+        end;
+      end;
+    end;
+    
+    P := Pos('"average_eat_hp"', S);
+    if P > 0 then
+    begin
+      PColon := Pos(':', Copy(S, P, Length(S) - P + 1));
+      if PColon > 0 then
+      begin
+        P := P + PColon - 1;
+        P2 := Pos(',', Copy(S, P, Length(S) - P + 1));
+        if P2 > 0 then P2 := P + P2 - 1
+        else begin P2 := Pos('}', Copy(S, P, Length(S) - P + 1)); if P2 > 0 then P2 := P + P2 - 1; end;
+        if P2 > 0 then
+        begin
+          ValStr := Trim(Copy(S, P + 1, P2 - P - 1));
+          PatternReaderState.AverageEatHP := StrToIntDef(ValStr, 50);
+        end;
+      end;
+    end;
+  except
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ SavePatternMemory - Save pattern data to JSON file                           }
+{------------------------------------------------------------------------------}
+procedure SavePatternMemory;
+var
+  S: String;
+  i: Integer;
+begin
+  try
+    S := '{' + LineEnding;
+    S := S + '  "current": {' + LineEnding;
+    S := S + '    "panic_threshold": ' + IntToStr(PatternReaderState.PanicThreshold) + ',' + LineEnding;
+    S := S + '    "average_eat_hp": ' + IntToStr(PatternReaderState.AverageEatHP) + ',' + LineEnding;
+    S := S + '    "eat_rhythm": ' + IntToStr(GetOpponentEatRhythm) + ',' + LineEnding;
+    S := S + '    "total_observations": ' + IntToStr(PatternReaderState.TotalObservations) + ',' + LineEnding;
+    S := S + '    "eat_history_count": ' + IntToStr(Length(PatternReaderState.EatHistory)) + ',' + LineEnding;
+    S := S + '    "attack_history_count": ' + IntToStr(Length(PatternReaderState.AttackHistory)) + LineEnding;
+    S := S + '  }' + LineEnding;
+    S := S + '}' + LineEnding;
+    
+    RewriteFile(PATTERN_MEMORY_PATH, S);
+  except
+    WriteLn('[PatternReader] Failed to save pattern memory');
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitPatternReader - Initialize the pattern reader system                     }
+{------------------------------------------------------------------------------}
+procedure InitPatternReader;
+begin
+  PatternReaderState.OpponentName := '';
+  SetLength(PatternReaderState.EatHistory, 0);
+  SetLength(PatternReaderState.AttackHistory, 0);
+  PatternReaderState.AverageEatHP := 50;
+  PatternReaderState.PanicThreshold := 30;
+  PatternReaderState.PredictedNextStyle := asUnknown;
+  PatternReaderState.StyleSwitchProbability := 0.5;
+  PatternReaderState.TotalObservations := 0;
+  PatternReaderState.LastEatDetectedTick := -99;
+  PatternReaderState.LastRecordedAttackTick := -1;
+  PatternReaderState.IsInitialized := True;
+  
+  LoadPatternMemory;
+  
+  WriteLn('[PatternReader] Initialized');
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdatePatternReader - Update pattern analysis (call every frame)             }
+{------------------------------------------------------------------------------}
+procedure UpdatePatternReader;
+var
+  i, HP: Integer;
+  StyleCounts: array[0..3] of Integer; { asUnknown, asMelee, asRanged, asMagic }
+  MostCommonIdx: Integer;
+  MaxCount: Integer;
+  OpponentStyle: TAttackStyle;
+  CurrentTick: Integer;
+begin
+  if not PatternReaderState.IsInitialized then Exit;
+  
+  CurrentTick := GetCurrentTick;
+  
+  { Detect opponent eat - GameAPI DidOpponentEatThisTick }
+  if DidOpponentEatThisTick and 
+     ((CurrentTick - PatternReaderState.LastEatDetectedTick) > 2) then
+  begin
+    PatternReaderState.LastEatDetectedTick := CurrentTick;
+    HP := Round(GetOpponentHPPercent * 99);
+    if HP <= 0 then HP := 50;
+    RecordEatEvent(HP, 'unknown');
+  end;
+  
+  { Detect attack events - record when new attack detected (once per attack) }
+  OpponentStyle := GetOpponentAttackStyle;
+  if (OpponentStyle <> asUnknown) and 
+     (GetTicksSinceLastAttack = 0) and 
+     (CurrentTick <> PatternReaderState.LastRecordedAttackTick) then
+  begin
+    RecordAttackEvent(OpponentStyle, '');
+    PatternReaderState.LastRecordedAttackTick := CurrentTick;
+  end;
+  
+  { Calculate average eat HP }
+  if Length(PatternReaderState.EatHistory) > 0 then
+  begin
+    PatternReaderState.AverageEatHP := 0;
+    for i := 0 to High(PatternReaderState.EatHistory) do
+      PatternReaderState.AverageEatHP := PatternReaderState.AverageEatHP + 
+        PatternReaderState.EatHistory[i].HPThreshold;
+    PatternReaderState.AverageEatHP := PatternReaderState.AverageEatHP div 
+      Length(PatternReaderState.EatHistory);
+  end;
+  
+  { Calculate most likely next style from follow-up patterns }
+  for i := 0 to 3 do StyleCounts[i] := 0;
+  
+  for i := 0 to High(PatternReaderState.AttackHistory) do
+  begin
+    if PatternReaderState.AttackHistory[i].FollowUpStyle <> asUnknown then
+      Inc(StyleCounts[Ord(PatternReaderState.AttackHistory[i].FollowUpStyle)]);
+  end;
+  
+  MaxCount := 0;
+  MostCommonIdx := 0;
+  for i := 1 to 3 do
+  begin
+    if StyleCounts[i] > MaxCount then
+    begin
+      MaxCount := StyleCounts[i];
+      MostCommonIdx := i;
+    end;
+  end;
+  
+  PatternReaderState.PredictedNextStyle := TAttackStyle(MostCommonIdx);
+  
+  if PatternReaderState.TotalObservations > 0 then
+    PatternReaderState.StyleSwitchProbability := MaxCount / PatternReaderState.TotalObservations
+  else
+    PatternReaderState.StyleSwitchProbability := 0.5;
+end;

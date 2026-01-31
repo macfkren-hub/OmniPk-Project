@@ -1,0 +1,60 @@
+{
+  "_comment": "OmniPK Engine - Tile Weights",
+  "_version": "1.0.0",
+  "_description": "Tile safety scores and positioning weights for movement analysis",
+  
+  "safety_weights": {
+    "base_safe": 1.0,
+    "melee_range_penalty": -0.5,
+    "spell_range_penalty": -0.2,
+    "diagonal_bonus": 0.1,
+    "corner_penalty": -0.3,
+    "wall_adjacent_bonus": 0.15
+  },
+  
+  "distance_weights": {
+    "optimal_melee_kite_distance": 2,
+    "optimal_mage_distance": 7,
+    "too_close_penalty": -0.4,
+    "too_far_penalty": -0.1
+  },
+  
+  "movement_costs": {
+    "straight_move": 1.0,
+    "diagonal_move": 1.0,
+    "blocked_tile": 999.0
+  },
+  
+  "danger_zones": {
+    "freeze_zone_radius": 1,
+    "spec_weapon_danger_radius": 2,
+    "multi_zone_penalty": -0.5
+  },
+  
+  "escape_route_weights": {
+    "direction_away_bonus": 0.3,
+    "direction_toward_penalty": -0.4,
+    "clear_path_bonus": 0.2,
+    "obstacle_penalty": -0.3
+  },
+  
+  "pvp_area_modifiers": {
+    "wilderness": {
+      "base_danger": 0.3,
+      "multi_combat_penalty": 0.5
+    },
+    "pvp_world": {
+      "base_danger": 0.2
+    },
+    "safe_zone": {
+      "base_danger": 0.0
+    }
+  },
+  
+  "thresholds": {
+    "safe_score": 0.7,
+    "caution_score": 0.4,
+    "danger_score": 0.2,
+    "deadly_score": 0.0
+  }
+}

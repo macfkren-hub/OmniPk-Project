@@ -1,0 +1,185 @@
+{==============================================================================}
+{  OmniPK Engine - MathUtils Module                                            }
+{  Mathematical utilities and helper functions.                                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_MATHUTILS}
+
+{------------------------------------------------------------------------------}
+{ Clamp - Clamp value between min and max                                      }
+{------------------------------------------------------------------------------}
+function ClampInt(Value, MinVal, MaxVal: Integer): Integer;
+begin
+  if Value < MinVal then
+    Result := MinVal
+  else if Value > MaxVal then
+    Result := MaxVal
+  else
+    Result := Value;
+end;
+
+{------------------------------------------------------------------------------}
+{ ClampDouble - Clamp double value between min and max                         }
+{------------------------------------------------------------------------------}
+function ClampDouble(Value, MinVal, MaxVal: Double): Double;
+begin
+  if Value < MinVal then
+    Result := MinVal
+  else if Value > MaxVal then
+    Result := MaxVal
+  else
+    Result := Value;
+end;
+
+{------------------------------------------------------------------------------}
+{ Lerp - Linear interpolation between two values                               }
+{------------------------------------------------------------------------------}
+function Lerp(A, B, T: Double): Double;
+begin
+  // T = 0.0 returns A, T = 1.0 returns B
+  Result := A + (B - A) * T;
+end;
+
+{------------------------------------------------------------------------------}
+{ LerpInt - Linear interpolation for integers                                  }
+{------------------------------------------------------------------------------}
+function LerpInt(A, B: Integer; T: Double): Integer;
+begin
+  Result := Round(A + (B - A) * T);
+end;
+
+{------------------------------------------------------------------------------}
+{ InverseLerp - Get T value from lerp result                                   }
+{------------------------------------------------------------------------------}
+function InverseLerp(A, B, Value: Double): Double;
+begin
+  if Abs(B - A) < 0.0001 then
+    Result := 0.0
+  else
+    Result := (Value - A) / (B - A);
+end;
+
+{------------------------------------------------------------------------------}
+{ SmoothStep - Smooth interpolation (ease in/out)                              }
+{------------------------------------------------------------------------------}
+function SmoothStep(T: Double): Double;
+begin
+  // Clamp T to 0-1
+  T := ClampDouble(T, 0.0, 1.0);
+  // Smooth step formula: 3t^2 - 2t^3
+  Result := T * T * (3.0 - 2.0 * T);
+end;
+
+{------------------------------------------------------------------------------}
+{ EaseInOut - Ease in and out interpolation                                    }
+{------------------------------------------------------------------------------}
+function EaseInOut(T: Double): Double;
+begin
+  T := ClampDouble(T, 0.0, 1.0);
+  if T < 0.5 then
+    Result := 2.0 * T * T
+  else
+    Result := 1.0 - Power(-2.0 * T + 2.0, 2) / 2.0;
+end;
+
+{------------------------------------------------------------------------------}
+{ MovingAverage - Calculate moving average of array                            }
+{------------------------------------------------------------------------------}
+function MovingAverage(Values: array of Double): Double;
+var
+  i: Integer;
+  Sum: Double;
+begin
+  if Length(Values) = 0 then
+  begin
+    Result := 0.0;
+    Exit;
+  end;
+  
+  Sum := 0.0;
+  for i := 0 to High(Values) do
+    Sum := Sum + Values[i];
+  
+  Result := Sum / Length(Values);
+end;
+
+{------------------------------------------------------------------------------}
+{ MovingAverageInt - Calculate moving average of integer array                 }
+{------------------------------------------------------------------------------}
+function MovingAverageInt(Values: array of Integer): Double;
+var
+  i: Integer;
+  Sum: Integer;
+begin
+  if Length(Values) = 0 then
+  begin
+    Result := 0.0;
+    Exit;
+  end;
+  
+  Sum := 0;
+  for i := 0 to High(Values) do
+    Sum := Sum + Values[i];
+  
+  Result := Sum / Length(Values);
+end;
+
+{------------------------------------------------------------------------------}
+{ StandardDeviation - Calculate standard deviation                             }
+{------------------------------------------------------------------------------}
+function StandardDeviation(Values: array of Double): Double;
+var
+  i: Integer;
+  Mean, SumSqDiff: Double;
+begin
+  if Length(Values) < 2 then
+  begin
+    Result := 0.0;
+    Exit;
+  end;
+  
+  Mean := MovingAverage(Values);
+  SumSqDiff := 0.0;
+  
+  for i := 0 to High(Values) do
+    SumSqDiff := SumSqDiff + Sqr(Values[i] - Mean);
+  
+  Result := Sqrt(SumSqDiff / (Length(Values) - 1));
+end;
+
+{------------------------------------------------------------------------------}
+{ NormalizeAngle - Normalize angle to 0-360 range                              }
+{------------------------------------------------------------------------------}
+function NormalizeAngle(Angle: Double): Double;
+begin
+  Result := Angle;
+  while Result < 0 do
+    Result := Result + 360.0;
+  while Result >= 360.0 do
+    Result := Result - 360.0;
+end;
+
+{------------------------------------------------------------------------------}
+{ AngleBetweenPoints - Get angle between two points                            }
+{------------------------------------------------------------------------------}
+function AngleBetweenPoints(P1, P2: TPoint): Double;
+begin
+  Result := ArcTan2(P2.Y - P1.Y, P2.X - P1.X) * 180.0 / 3.14159;
+  Result := NormalizeAngle(Result);
+end;
+
+{------------------------------------------------------------------------------}
+{ RandomRange - Get random value in range                                      }
+{------------------------------------------------------------------------------}
+function RandomRangeInt(MinVal, MaxVal: Integer): Integer;
+begin
+  Result := Random(MaxVal - MinVal + 1) + MinVal;
+end;
+
+{------------------------------------------------------------------------------}
+{ RandomRangeDouble - Get random double in range                               }
+{------------------------------------------------------------------------------}
+function RandomRangeDouble(MinVal, MaxVal: Double): Double;
+begin
+  Result := MinVal + Random * (MaxVal - MinVal);
+end;

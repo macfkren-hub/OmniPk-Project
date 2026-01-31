@@ -1,0 +1,116 @@
+{
+  "_comment": "OmniPK Engine - Configuration",
+  "_version": "1.0.0",
+  "_description": "Global settings, thresholds, and overlay configuration",
+  
+  "engine": {
+    "tick_ms": 600,
+    "main_loop_delay_ms": 15,
+    "debug_enabled": true,
+    "debug_level": 3
+  },
+  
+  "thresholds": {
+    "ko_risk_low": 0.3,
+    "ko_risk_medium": 0.5,
+    "ko_risk_high": 0.7,
+    "ko_risk_critical": 0.9,
+    "safe_hp_buffer": 5,
+    "low_prayer_warning": 20,
+    "panic_eat_hp_percent": 0.3
+  },
+  
+  "timing": {
+    "prayer_swap_cooldown_ticks": 1,
+    "eat_cooldown_ticks": 3,
+    "spec_check_interval_ticks": 1,
+    "pattern_save_interval_seconds": 60
+  },
+  
+  "overlay": {
+    "enabled": true,
+    "alpha": 180,
+    "theme": "neon"
+  },
+  
+  "colors": {
+    "neon_cyan": "#00FFFF",
+    "electric_purple": "#A020F0",
+    "danger_red": "#FF4444",
+    "lime_green": "#00FF00",
+    "soft_white": "#FFFFFF",
+    "warning_orange": "#FFA500",
+    "dark_background": "#1A1A1A"
+  },
+  
+  "hud": {
+    "show_tick_counter": true,
+    "show_freeze_status": true,
+    "show_desync_indicator": true,
+    "show_attack_cooldown": true,
+    "position_x": 10,
+    "position_y": 10
+  },
+  
+  "tile_overlay": {
+    "show_recommended_tile": true,
+    "show_danger_zones": true,
+    "show_safe_tiles": true,
+    "show_opponent_path": true,
+    "tile_alpha": 150
+  },
+  
+  "ko_overlay": {
+    "show_threat_level": true,
+    "show_risk_bar": true,
+    "show_eat_warning": true,
+    "flash_on_critical": true,
+    "position_x": 750,
+    "position_y": 10
+  },
+  
+  "prayer_overlay": {
+    "show_mismatch_warning": true,
+    "show_swap_indicator": true,
+    "show_prayer_points": true,
+    "flash_on_wrong_prayer": true
+  },
+  
+  "debug_overlay": {
+    "enabled": true,
+    "show_module_states": true,
+    "show_performance_stats": true,
+    "position_x": 10,
+    "position_y": 500
+  },
+  
+  "keybinds": {
+    "toggle_overlay": "F1",
+    "toggle_debug": "F2",
+    "force_refresh": "F5"
+  },
+  
+  "performance": {
+    "max_history_entries": 50,
+    "pattern_memory_max_opponents": 100,
+    "gc_interval_seconds": 300
+  },
+  
+  "attack_detection": {
+    "melee_animations": [380, 381, 386, 395, 414, 422, 423, 451, 1062, 1658],
+    "ranged_animations": [426, 1074, 2503, 4230, 4261],
+    "magic_animations": [711, 1162, 1167, 1978, 1979, 7855]
+  },
+  
+  "freeze_detection": {
+    "graphic_ids": [363, 366, 367, 369, 437, 438, 439],
+    "duration_ice_barrage": 20,
+    "duration_ice_blitz": 15,
+    "duration_ice_burst": 10,
+    "duration_ice_rush": 5,
+    "duration_entangle": 15,
+    "duration_snare": 10,
+    "duration_bind": 5,
+    "position_unchanged_ticks_to_confirm": 2
+  }
+}

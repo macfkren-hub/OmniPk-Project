@@ -1,0 +1,210 @@
+(*
+  GameAPI.simba
+  OmniPK Engine - Real Simba/SRL API integration for game data.
+  Include your SRL-T or WaspLib (e.g. {$I SRL-T/osr.simba}) at the top of main.simba
+  so RSW, GetLocalPlayer, GetTile, GetAnimation, GetGraphic, etc. are in scope.
+  Define OMNIPK_USE_SRL to use real API; else safe fallbacks so script compiles.
+*)
+
+function GetOpponentPlayerIndex: Int32;
+begin
+  Result := -1;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    Result := GetTargetIndex();
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetMyTile: TPoint;
+begin
+  Result := Point(0, 0);
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    Result := RSW.GetMyPos();
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetOpponentTile: TPoint;
+begin
+  Result := Point(0, 0);
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if GetOpponentPlayerIndex() >= 0 then
+      Result := GetTile(GetOpponentPlayerIndex());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetMyAnimation: Int32;
+begin
+  Result := 0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    Result := GetAnimation(GetLocalPlayer());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetMyGraphic: Int32;
+begin
+  Result := 0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    Result := GetGraphic(GetLocalPlayer());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetOpponentAnimation: Int32;
+begin
+  Result := 0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if GetOpponentPlayerIndex() >= 0 then
+      Result := GetAnimation(GetOpponentPlayerIndex());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetOpponentGraphic: Int32;
+begin
+  Result := 0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if GetOpponentPlayerIndex() >= 0 then
+      Result := GetGraphic(GetOpponentPlayerIndex());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetActivePrayerString: string;
+begin
+  Result := 'none';
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if IsPrayerActive(PROTECT_FROM_MAGIC) then Result := 'mage'
+    else if IsPrayerActive(PROTECT_FROM_MISSILES) then Result := 'range'
+    else if IsPrayerActive(PROTECT_FROM_MELEE) then Result := 'melee';
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetOpponentHPPercent: Single;
+var
+  cur, max: Int32;
+  idx: Int32;
+begin
+  Result := 1.0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    idx := GetOpponentPlayerIndex();
+    if idx >= 0 then
+    begin
+      cur := GetHP(idx);
+      max := GetMaxHP(idx);
+      if max > 0 then Result := cur / max;
+    end;
+  except
+  end;
+  {$ENDIF}
+end;
+
+function DidOpponentEatThisTick: Boolean;
+begin
+  Result := False;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if GetOpponentPlayerIndex() >= 0 then
+      Result := (GetAnimation(GetOpponentPlayerIndex()) = 829);
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetOpponentDestination: TPoint;
+begin
+  Result := Point(0, 0);
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if GetOpponentPlayerIndex() >= 0 then
+      Result := GetDestination(GetOpponentPlayerIndex());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function IsOpponentMoving: Boolean;
+begin
+  Result := False;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if GetOpponentPlayerIndex() >= 0 then
+      Result := (GetDestination(GetOpponentPlayerIndex()).x <> 0) or (GetDestination(GetOpponentPlayerIndex()).y <> 0);
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetMyLastAttackTick: Int64;
+begin
+  Result := 0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    Result := GetLastAttackTick(GetLocalPlayer());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetMyLastMoveTick: Int64;
+begin
+  Result := 0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    Result := GetLastMoveTick(GetLocalPlayer());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetOpponentLastMoveTick: Int64;
+begin
+  Result := 0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    if GetOpponentPlayerIndex() >= 0 then
+      Result := GetLastMoveTick(GetOpponentPlayerIndex());
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetMyHPPercent: Single;
+var
+  cur, max: Int32;
+begin
+  Result := 1.0;
+  {$IFDEF OMNIPK_USE_SRL}
+  try
+    cur := GetHP(GetLocalPlayer());
+    max := GetMaxHP(GetLocalPlayer());
+    if max > 0 then Result := cur / max;
+  except
+  end;
+  {$ENDIF}
+end;
+
+function GetOpponentAnim: Int32;
+begin
+  Result := GetOpponentAnimation();
+end;

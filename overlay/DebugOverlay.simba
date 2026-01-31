@@ -1,0 +1,87 @@
+{==============================================================================}
+{  OmniPK Engine - DebugOverlay Module                                         }
+{  Debug info. Reads from all core modules.                                    }
+{  VISUALS ONLY - No logic, no state modification.                             }
+{==============================================================================}
+
+{$DEFINE OMNIPK_DEBUGOVERLAY}
+
+const
+  DEBUG_LEFT_X = 10;
+  DEBUG_BOTTOM_Y = 500;
+  DEBUG_LINE_HEIGHT = 14;
+  DEBUG_COLOR = $FFFFFF;
+
+var
+  DebugOverlayEnabled: Boolean = True;
+
+procedure SetDebugEnabled(Enabled: Boolean);
+begin
+  DebugOverlayEnabled := Enabled;
+end;
+
+function IsDebugEnabled: Boolean;
+begin
+  Result := DebugOverlayEnabled;
+end;
+
+function AttackStyleStr(S: TAttackStyle): String;
+begin
+  case S of
+    asUnknown: Result := '?';
+    asMelee: Result := 'M';
+    asRanged: Result := 'R';
+    asMagic: Result := 'G';
+  else
+    Result := '?';
+  end;
+end;
+
+function PrayerStr(P: TPrayerType): String;
+begin
+  case P of
+    ptNone: Result := '-';
+    ptProtectMelee: Result := 'M';
+    ptProtectRanged: Result := 'R';
+    ptProtectMagic: Result := 'G';
+  else
+    Result := '-';
+  end;
+end;
+
+procedure DrawDebugOverlay;
+var
+  Y: Integer;
+begin
+  if not DebugOverlayEnabled then Exit;
+  
+  Y := DEBUG_BOTTOM_Y;
+  
+  OmniPK_DrawText(DEBUG_LEFT_X, Y, 
+    Format('Tick:%d Freeze:%s', [GetCurrentTick, 
+      BoolToStr(IsPlayerFrozen)]), DEBUG_COLOR);
+  Y := Y + DEBUG_LINE_HEIGHT;
+  
+  OmniPK_DrawText(DEBUG_LEFT_X, Y,
+    Format('Pos:(%d,%d) Opp:(%d,%d)', 
+      [GetPlayerPosition.X, GetPlayerPosition.Y,
+       GetOpponentPosition.X, GetOpponentPosition.Y]), DEBUG_COLOR);
+  Y := Y + DEBUG_LINE_HEIGHT;
+  
+  OmniPK_DrawText(DEBUG_LEFT_X, Y,
+    Format('Style:%s Prayer:%s->%s', 
+      [AttackStyleStr(GetOpponentAttackStyle),
+       PrayerStr(GetCurrentPrayer),
+       PrayerStr(RecommendedPrayer)]), DEBUG_COLOR);
+  Y := Y + DEBUG_LINE_HEIGHT;
+  
+  OmniPK_DrawText(DEBUG_LEFT_X, Y,
+    Format('HP:%d Risk:%.2f KO:%s', 
+      [GetPlayerHP, GetKORiskScore,
+       BoolToStr(IsKOWindowActive)]), DEBUG_COLOR);
+  Y := Y + DEBUG_LINE_HEIGHT;
+  
+  OmniPK_DrawText(DEBUG_LEFT_X, Y,
+    Format('Desync:%d Splash:%.0f%%', 
+      [GetTickOffset, GetSplashProbability * 100]), DEBUG_COLOR);
+end;

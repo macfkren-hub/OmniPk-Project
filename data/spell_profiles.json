@@ -1,0 +1,118 @@
+{
+  "_comment": "OmniPK Engine - Spell Profiles",
+  "_version": "1.0.0",
+  "_description": "Spell damage, freeze durations, and projectile speeds",
+  
+  "spells": {
+    "ice_barrage": {
+      "name": "Ice Barrage",
+      "max_hit": 30,
+      "freeze_duration_ticks": 20,
+      "freeze_duration_seconds": 12,
+      "magic_level_required": 94,
+      "rune_cost": "expensive",
+      "is_ancient": true,
+      "is_freeze": true,
+      "projectile_speed": "instant"
+    },
+    "ice_blitz": {
+      "name": "Ice Blitz",
+      "max_hit": 26,
+      "freeze_duration_ticks": 15,
+      "freeze_duration_seconds": 9,
+      "magic_level_required": 82,
+      "rune_cost": "moderate",
+      "is_ancient": true,
+      "is_freeze": true,
+      "projectile_speed": "instant"
+    },
+    "ice_burst": {
+      "name": "Ice Burst",
+      "max_hit": 22,
+      "freeze_duration_ticks": 10,
+      "freeze_duration_seconds": 6,
+      "magic_level_required": 70,
+      "rune_cost": "moderate",
+      "is_ancient": true,
+      "is_freeze": true,
+      "projectile_speed": "instant"
+    },
+    "ice_rush": {
+      "name": "Ice Rush",
+      "max_hit": 18,
+      "freeze_duration_ticks": 5,
+      "freeze_duration_seconds": 3,
+      "magic_level_required": 58,
+      "rune_cost": "cheap",
+      "is_ancient": true,
+      "is_freeze": true,
+      "projectile_speed": "instant"
+    },
+    "blood_barrage": {
+      "name": "Blood Barrage",
+      "max_hit": 29,
+      "freeze_duration_ticks": 0,
+      "magic_level_required": 92,
+      "rune_cost": "expensive",
+      "is_ancient": true,
+      "is_freeze": false,
+      "special_effect": "heal_25_percent",
+      "projectile_speed": "instant"
+    },
+    "entangle": {
+      "name": "Entangle",
+      "max_hit": 5,
+      "freeze_duration_ticks": 15,
+      "freeze_duration_seconds": 9,
+      "magic_level_required": 79,
+      "rune_cost": "cheap",
+      "is_ancient": false,
+      "is_freeze": true,
+      "projectile_speed": "slow"
+    },
+    "snare": {
+      "name": "Snare",
+      "max_hit": 3,
+      "freeze_duration_ticks": 10,
+      "freeze_duration_seconds": 6,
+      "magic_level_required": 50,
+      "rune_cost": "cheap",
+      "is_ancient": false,
+      "is_freeze": true,
+      "projectile_speed": "slow"
+    },
+    "bind": {
+      "name": "Bind",
+      "max_hit": 1,
+      "freeze_duration_ticks": 5,
+      "freeze_duration_seconds": 3,
+      "magic_level_required": 20,
+      "rune_cost": "cheap",
+      "is_ancient": false,
+      "is_freeze": true,
+      "projectile_speed": "slow"
+    },
+    "fire_surge": {
+      "name": "Fire Surge",
+      "max_hit": 24,
+      "freeze_duration_ticks": 0,
+      "magic_level_required": 95,
+      "rune_cost": "moderate",
+      "is_ancient": false,
+      "is_freeze": false,
+      "projectile_speed": "medium"
+    }
+  },
+  
+  "projectile_speeds": {
+    "instant": 0,
+    "fast": 1,
+    "medium": 2,
+    "slow": 3
+  },
+  
+  "defaults": {
+    "max_hit": 20,
+    "freeze_duration_ticks": 0
+  }
+}

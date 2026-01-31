@@ -1,0 +1,252 @@
+{==============================================================================}
+{                                                                              }
+{                           OmniPK Engine v1.0.0                               }
+{                                                                              }
+{  A modular, tick-accurate OSRS PvP intelligence system.                      }
+{  Combat HUD + Prediction + Analysis Framework                                }
+{                                                                              }
+{  ARCHITECTURE:                                                               }
+{  - /core/    : Logic modules (no drawing)                                    }
+{  - /overlay/ : Visual modules (no logic)                                     }
+{  - /data/    : JSON configuration files                                      }
+{  - /utils/   : Shared utility functions                                      }
+{                                                                              }
+{  GUARDRAILS:                                                                 }
+{  - TickTracker is the ONLY timing source                                     }
+{  - No Wait/Sleep except in main loop                                         }
+{  - Overlays only READ state, never modify                                    }
+{  - All constants in /data/ JSON files                                        }
+{                                                                              }
+{==============================================================================}
+
+program OmniPKEngine;
+
+{------------------------------------------------------------------------------}
+{ Include Utility Modules                                                      }
+{------------------------------------------------------------------------------}
+{$I utils/ColorUtils.simba}
+{$I utils/TileUtils.simba}
+{$I utils/MathUtils.simba}
+{$I utils/DebugUtils.simba}
+{$I utils/GameAPI.simba}
+{$I utils/DrawAPI.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Core Modules (in dependency order)                                   }
+{------------------------------------------------------------------------------}
+{$I core/TickTracker.simba}
+{$I core/FreezeDetection.simba}
+{$I core/MovementHelper.simba}
+{$I core/AttackStyleDetector.simba}
+{$I core/PrayerHelper.simba}
+{$I core/KOAnalyzer.simba}
+{$I core/PatternReader.simba}
+{$I core/PathingPredictor.simba}
+{$I core/SplashPredictor.simba}
+{$I core/DesyncEngine.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Overlay Modules                                                      }
+{------------------------------------------------------------------------------}
+{$I overlay/HUDOverlay.simba}
+{$I overlay/TileOverlay.simba}
+{$I overlay/KOOverlay.simba}
+{$I overlay/PrayerOverlay.simba}
+{$I overlay/DebugOverlay.simba}
+
+{------------------------------------------------------------------------------}
+{ Engine State                                                                 }
+{------------------------------------------------------------------------------}
+var
+  EngineRunning: Boolean;
+  FrameCount: Integer;
+  LastFrameTime: UInt64;
+
+{------------------------------------------------------------------------------}
+{ InitializeAllModules - Initialize all core modules in order                  }
+{------------------------------------------------------------------------------}
+procedure InitializeAllModules;
+begin
+  WriteLn('========================================');
+  WriteLn('  OmniPK Engine v1.0.0 - Initializing  ');
+  WriteLn('========================================');
+  WriteLn('');
+  
+  // Initialize core modules in dependency order
+  // Each module depends only on modules initialized before it
+  
+  WriteLn('[Main] Initializing core modules...');
+  
+  // 1. TickTracker - MUST be first (timing source for all others)
+  InitTickTracker;
+  
+  // 2. FreezeDetection - Depends on: TickTracker
+  InitFreezeDetection;
+  
+  // 3. MovementHelper - Depends on: TickTracker, FreezeDetection
+  InitMovementHelper;
+  
+  // 4. AttackStyleDetector - Depends on: TickTracker
+  InitAttackStyleDetector;
+  
+  // 5. PrayerHelper - Depends on: TickTracker, AttackStyleDetector
+  InitPrayerHelper;
+  
+  // 6. KOAnalyzer - Depends on: TickTracker, AttackStyleDetector
+  InitKOAnalyzer;
+  
+  // 7. PatternReader - Depends on: TickTracker, AttackStyleDetector
+  InitPatternReader;
+  
+  // 8. PathingPredictor - Depends on: TickTracker, MovementHelper
+  InitPathingPredictor;
+  
+  // 9. SplashPredictor - Depends on: TickTracker
+  InitSplashPredictor;
+  
+  // 10. DesyncEngine - Depends on: TickTracker
+  InitDesyncEngine;
+  
+  WriteLn('');
+  WriteLn('[Main] All modules initialized successfully.');
+  WriteLn('========================================');
+  WriteLn('');
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdateAllModules - Update all core modules in correct order                  }
+{ ORDER IS CRITICAL - Do not change without understanding dependencies         }
+{------------------------------------------------------------------------------}
+procedure UpdateAllModules;
+begin
+  // UPDATE ORDER (DO NOT CHANGE):
+  // Each module may depend on state from modules updated before it
+  
+  // 1. TickTracker - ALWAYS first (timing source)
+  UpdateTickTracker;
+  
+  // 2. FreezeDetection - Needs current tick
+  UpdateFreezeDetection;
+  
+  // 3. MovementHelper - Needs freeze status
+  UpdateMovementHelper;
+  
+  // 4. AttackStyleDetector - Needs current tick
+  UpdateAttackStyleDetector;
+  
+  // 5. PrayerHelper - Needs attack style
+  UpdatePrayerHelper;
+  
+  // 6. PatternReader - Needs attack style, positions
+  UpdatePatternReader;
+  
+  // 7. PathingPredictor - Needs positions, freeze status
+  UpdatePathingPredictor;
+  
+  // 8. SplashPredictor - Independent calculations
+  UpdateSplashPredictor;
+  
+  // 9. DesyncEngine - Needs timing data
+  UpdateDesyncEngine;
+  
+  // 10. KOAnalyzer - LAST (needs all other data for analysis)
+  UpdateKOAnalyzer;
+end;
+
+{------------------------------------------------------------------------------}
+{ DrawAllOverlays - Draw all overlay modules in correct order                  }
+{ ORDER: Background to foreground (most important drawn last)                  }
+{------------------------------------------------------------------------------}
+procedure DrawAllOverlays;
+begin
+  // DRAW ORDER (back to front):
+  // Overlays drawn later appear on top of earlier ones
+  
+  // 1. TileOverlay - Background layer (world tiles)
+  DrawTileOverlay;
+  
+  // 2. HUDOverlay - Main HUD elements
+  DrawHUDOverlay;
+  
+  // 3. PrayerOverlay - Prayer indicators
+  DrawPrayerOverlay;
+  
+  // 4. KOOverlay - KO warnings (important - draw on top)
+  DrawKOOverlay;
+  
+  // 5. DebugOverlay - Debug info (topmost when enabled)
+  DrawDebugOverlay;
+end;
+
+{------------------------------------------------------------------------------}
+{ MainLoop - The main engine loop                                              }
+{ ONLY PLACE WHERE Wait() IS ALLOWED                                           }
+{------------------------------------------------------------------------------}
+procedure MainLoop;
+var
+  FrameStartTime: UInt64;
+  FrameDuration: UInt64;
+begin
+  FrameStartTime := GetTimeRunning;
+  
+  // Update all core modules in order
+  UpdateAllModules;
+  
+  // Draw all overlays in order
+  DrawAllOverlays;
+  
+  // Track frame timing
+  Inc(FrameCount);
+  FrameDuration := GetTimeRunning - FrameStartTime;
+  
+  // Log performance every 100 frames
+  if (FrameCount mod 100) = 0 then
+  begin
+    LogVerbose('Main', Format('Frame %d | Duration: %dms | Tick: %d', 
+      [FrameCount, FrameDuration, GetCurrentTick]));
+  end;
+  
+  // ONLY Wait() ALLOWED IN ENTIRE ENGINE
+  // 15ms delay = ~66 FPS, fast enough for tick-accurate updates
+  Wait(15);
+end;
+
+{------------------------------------------------------------------------------}
+{ Run - Main entry point                                                       }
+{------------------------------------------------------------------------------}
+procedure Run;
+begin
+  // Initialize all modules
+  InitializeAllModules;
+  
+  // Set engine state
+  EngineRunning := True;
+  FrameCount := 0;
+  LastFrameTime := GetTimeRunning;
+  
+  WriteLn('[Main] Starting main loop...');
+  WriteLn('[Main] Press STOP to terminate.');
+  WriteLn('');
+  
+  // Main engine loop
+  while EngineRunning do
+  begin
+    MainLoop;
+  end;
+  
+  // Cleanup
+  WriteLn('');
+  WriteLn('[Main] Engine stopped.');
+  WriteLn('[Main] Total frames: ', FrameCount);
+  WriteLn('[Main] Final tick: ', GetCurrentTick);
+  
+  // Save pattern memory on exit
+  SavePatternMemory;
+end;
+
+{------------------------------------------------------------------------------}
+{ Program Entry                                                                }
+{------------------------------------------------------------------------------}
+begin
+  Run;
+end.

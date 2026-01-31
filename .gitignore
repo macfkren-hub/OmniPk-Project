@@ -1,0 +1,15 @@
+# Simba
+*.sps
+*.db
+*.log
+__history__/
+*.backup
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+*.code-workspace

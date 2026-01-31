@@ -1,0 +1,194 @@
+{==============================================================================}
+{  OmniPK Engine - DebugUtils Module                                           }
+{  Debugging and logging utilities.                                            }
+{==============================================================================}
+
+{$DEFINE OMNIPK_DEBUGUTILS}
+
+{------------------------------------------------------------------------------}
+{ Debug Level Constants                                                        }
+{------------------------------------------------------------------------------}
+const
+  DEBUG_LEVEL_NONE    = 0;
+  DEBUG_LEVEL_ERROR   = 1;
+  DEBUG_LEVEL_WARNING = 2;
+  DEBUG_LEVEL_INFO    = 3;
+  DEBUG_LEVEL_VERBOSE = 4;
+
+var
+  CurrentDebugLevel: Integer = DEBUG_LEVEL_INFO;
+  LogToFile: Boolean = False;
+  LogFilePath: String = '';
+
+{------------------------------------------------------------------------------}
+{ SetDebugLevel - Set the current debug level                                  }
+{------------------------------------------------------------------------------}
+procedure SetDebugLevel(Level: Integer);
+begin
+  CurrentDebugLevel := Level;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetDebugLevel - Get the current debug level                                  }
+{------------------------------------------------------------------------------}
+function GetDebugLevel: Integer;
+begin
+  Result := CurrentDebugLevel;
+end;
+
+{------------------------------------------------------------------------------}
+{ EnableFileLogging - Enable logging to file                                   }
+{------------------------------------------------------------------------------}
+procedure EnableFileLogging(FilePath: String);
+begin
+  LogToFile := True;
+  LogFilePath := FilePath;
+end;
+
+{------------------------------------------------------------------------------}
+{ DisableFileLogging - Disable logging to file                                 }
+{------------------------------------------------------------------------------}
+procedure DisableFileLogging;
+begin
+  LogToFile := False;
+end;
+
+{------------------------------------------------------------------------------}
+{ DebugLog - Log a debug message                                               }
+{------------------------------------------------------------------------------}
+procedure DebugLog(Level: Integer; Module, Message: String);
+var
+  Prefix: String;
+  FullMessage: String;
+begin
+  if Level > CurrentDebugLevel then
+    Exit;
+  
+  case Level of
+    DEBUG_LEVEL_ERROR: Prefix := '[ERROR]';
+    DEBUG_LEVEL_WARNING: Prefix := '[WARN]';
+    DEBUG_LEVEL_INFO: Prefix := '[INFO]';
+    DEBUG_LEVEL_VERBOSE: Prefix := '[DEBUG]';
+  else
+    Prefix := '[???]';
+  end;
+  
+  FullMessage := Format('%s [%s] %s', [Prefix, Module, Message]);
+  
+  WriteLn(FullMessage);
+  
+  // TODO: Implement file logging if enabled
+  if LogToFile and (LogFilePath <> '') then
+  begin
+    // Append to log file
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ LogError - Log an error message                                              }
+{------------------------------------------------------------------------------}
+procedure LogError(Module, Message: String);
+begin
+  DebugLog(DEBUG_LEVEL_ERROR, Module, Message);
+end;
+
+{------------------------------------------------------------------------------}
+{ LogWarning - Log a warning message                                           }
+{------------------------------------------------------------------------------}
+procedure LogWarning(Module, Message: String);
+begin
+  DebugLog(DEBUG_LEVEL_WARNING, Module, Message);
+end;
+
+{------------------------------------------------------------------------------}
+{ LogInfo - Log an info message                                                }
+{------------------------------------------------------------------------------}
+procedure LogInfo(Module, Message: String);
+begin
+  DebugLog(DEBUG_LEVEL_INFO, Module, Message);
+end;
+
+{------------------------------------------------------------------------------}
+{ LogVerbose - Log a verbose/debug message                                     }
+{------------------------------------------------------------------------------}
+procedure LogVerbose(Module, Message: String);
+begin
+  DebugLog(DEBUG_LEVEL_VERBOSE, Module, Message);
+end;
+
+{------------------------------------------------------------------------------}
+{ BoolToStr - Convert boolean to string                                        }
+{------------------------------------------------------------------------------}
+function BoolToStr(Value: Boolean): String;
+begin
+  if Value then
+    Result := 'True'
+  else
+    Result := 'False';
+end;
+
+{------------------------------------------------------------------------------}
+{ PointToStr - Convert TPoint to string                                        }
+{------------------------------------------------------------------------------}
+function PointToStr(P: TPoint): String;
+begin
+  Result := Format('(%d, %d)', [P.X, P.Y]);
+end;
+
+{------------------------------------------------------------------------------}
+{ AttackStyleToStr - Convert TAttackStyle to string                            }
+{------------------------------------------------------------------------------}
+function AttackStyleToStr(Style: TAttackStyle): String;
+begin
+  case Style of
+    asUnknown: Result := 'Unknown';
+    asMelee: Result := 'Melee';
+    asRanged: Result := 'Ranged';
+    asMagic: Result := 'Magic';
+  else
+    Result := 'Invalid';
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ FreezeTypeToStr - Convert TFreezeType to string                              }
+{------------------------------------------------------------------------------}
+function FreezeTypeToStr(FreezeType: TFreezeType): String;
+begin
+  case FreezeType of
+    ftNone: Result := 'None';
+    ftIceBarrage: Result := 'Ice Barrage';
+    ftIceBlitz: Result := 'Ice Blitz';
+    ftIceBurst: Result := 'Ice Burst';
+    ftIceRush: Result := 'Ice Rush';
+    ftEntangle: Result := 'Entangle';
+    ftSnare: Result := 'Snare';
+    ftBind: Result := 'Bind';
+  else
+    Result := 'Unknown';
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ StartTimer - Start a performance timer                                       }
+{------------------------------------------------------------------------------}
+function StartTimer: UInt64;
+begin
+  Result := GetTimeRunning;
+end;
+
+{------------------------------------------------------------------------------}
+{ StopTimer - Stop timer and return elapsed milliseconds                       }
+{------------------------------------------------------------------------------}
+function StopTimer(StartTime: UInt64): UInt64;
+begin
+  Result := GetTimeRunning - StartTime;
+end;
+
+{------------------------------------------------------------------------------}
+{ LogTiming - Log timing information                                           }
+{------------------------------------------------------------------------------}
+procedure LogTiming(Module, Operation: String; ElapsedMs: UInt64);
+begin
+  LogVerbose(Module, Format('%s took %dms', [Operation, ElapsedMs]));
+end;

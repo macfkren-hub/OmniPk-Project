@@ -1,0 +1,40 @@
+{==============================================================================}
+{  OmniPK Engine - DrawAPI Module                                              }
+{  Abstraction for overlay drawing. Replace with your client's drawing API.    }
+{  When using SRL/SMART: {$DEFINE OMNIPK_USE_SRL} and implement below.        }
+{==============================================================================}
+
+procedure OmniPK_DrawText(X, Y: Integer; const Text: String; Color: Integer);
+begin
+  {$IFDEF OMNIPK_USE_SRL}
+  { SMART_DrawText(GetCanvas, Point(X, Y), Text, Color); }
+  {$ENDIF}
+  { No-op fallback - overlays prepare data, actual draw via your client }
+end;
+
+procedure OmniPK_DrawBox(X1, Y1, X2, Y2: Integer; Color: Integer);
+begin
+  {$IFDEF OMNIPK_USE_SRL}
+  { SMART_DrawBox(GetCanvas, Box(X1, Y1, X2, Y2), Color); }
+  {$ENDIF}
+end;
+
+procedure OmniPK_DrawLine(X1, Y1, X2, Y2: Integer; Color: Integer);
+begin
+  {$IFDEF OMNIPK_USE_SRL}
+  { SMART_DrawLine(GetCanvas, Point(X1,Y1), Point(X2,Y2), Color); }
+  {$ENDIF}
+end;
+
+procedure OmniPK_DrawRect(X, Y, W, H: Integer; Color: Integer; Filled: Boolean);
+begin
+  OmniPK_DrawBox(X, Y, X+W, Y+H, Color);
+end;
+
+function OmniPK_WorldToScreen(WorldX, WorldY: Integer): TPoint;
+begin
+  Result := Point(WorldX, WorldY);
+  {$IFDEF OMNIPK_USE_SRL}
+  { Result := RSW.TileToScreen(Point(WorldX, WorldY)); }
+  {$ENDIF}
+end;

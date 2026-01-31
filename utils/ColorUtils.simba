@@ -1,0 +1,129 @@
+{==============================================================================}
+{  OmniPK Engine - ColorUtils Module                                           }
+{  Color manipulation and theme utilities.                                     }
+{==============================================================================}
+
+{$DEFINE OMNIPK_COLORUTILS}
+
+{------------------------------------------------------------------------------}
+{ Theme Color Constants                                                        }
+{------------------------------------------------------------------------------}
+const
+  // Primary theme colors (BGR format for Simba)
+  THEME_NEON_CYAN      = $FFFF00;   // #00FFFF
+  THEME_ELECTRIC_PURPLE = $F020A0;  // #A020F0
+  THEME_DANGER_RED     = $4444FF;   // #FF4444
+  THEME_LIME_GREEN     = $00FF00;   // #00FF00
+  THEME_SOFT_WHITE     = $FFFFFF;   // #FFFFFF
+  THEME_DARK_BG        = $1A1A1A;   // #1A1A1A
+  
+  // Alert colors
+  ALERT_INFO    = $FFFF00;   // Cyan
+  ALERT_WARNING = $00FFFF;   // Yellow
+  ALERT_DANGER  = $4444FF;   // Red
+  ALERT_SUCCESS = $00FF00;   // Green
+
+{------------------------------------------------------------------------------}
+{ RGBToColor - Convert RGB components to color value                           }
+{------------------------------------------------------------------------------}
+function RGBToColor(R, G, B: Byte): Integer;
+begin
+  // Simba uses BGR format
+  Result := B or (G shl 8) or (R shl 16);
+end;
+
+{------------------------------------------------------------------------------}
+{ ColorToRGB - Extract RGB components from color value                         }
+{------------------------------------------------------------------------------}
+procedure ColorToRGB(Color: Integer; var R, G, B: Byte);
+begin
+  B := Color and $FF;
+  G := (Color shr 8) and $FF;
+  R := (Color shr 16) and $FF;
+end;
+
+{------------------------------------------------------------------------------}
+{ BlendColors - Blend two colors with alpha                                    }
+{------------------------------------------------------------------------------}
+function BlendColors(Color1, Color2: Integer; Alpha: Double): Integer;
+var
+  R1, G1, B1, R2, G2, B2: Byte;
+  R, G, B: Byte;
+begin
+  // TODO: Implement color blending
+  // Alpha = 0.0 returns Color1, Alpha = 1.0 returns Color2
+  
+  ColorToRGB(Color1, R1, G1, B1);
+  ColorToRGB(Color2, R2, G2, B2);
+  
+  R := Round(R1 * (1 - Alpha) + R2 * Alpha);
+  G := Round(G1 * (1 - Alpha) + G2 * Alpha);
+  B := Round(B1 * (1 - Alpha) + B2 * Alpha);
+  
+  Result := RGBToColor(R, G, B);
+end;
+
+{------------------------------------------------------------------------------}
+{ AdjustBrightness - Adjust color brightness                                   }
+{------------------------------------------------------------------------------}
+function AdjustBrightness(Color: Integer; Factor: Double): Integer;
+var
+  R, G, B: Byte;
+begin
+  // TODO: Implement brightness adjustment
+  // Factor > 1.0 brightens, Factor < 1.0 darkens
+  
+  ColorToRGB(Color, R, G, B);
+  
+  R := Min(255, Round(R * Factor));
+  G := Min(255, Round(G * Factor));
+  B := Min(255, Round(B * Factor));
+  
+  Result := RGBToColor(R, G, B);
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPulseColor - Get color with pulse animation                               }
+{------------------------------------------------------------------------------}
+function GetPulseColor(BaseColor: Integer; PulseProgress: Double): Integer;
+var
+  PulseFactor: Double;
+begin
+  // TODO: Implement pulse effect
+  // PulseProgress = 0.0 to 1.0 (from tick progress)
+  // Creates smooth pulse animation
+  
+  // Sine wave for smooth pulse
+  PulseFactor := 0.7 + 0.3 * Sin(PulseProgress * 3.14159 * 2);
+  Result := AdjustBrightness(BaseColor, PulseFactor);
+end;
+
+{------------------------------------------------------------------------------}
+{ GetThreatColor - Get color based on threat level (0.0 - 1.0)                 }
+{------------------------------------------------------------------------------}
+function GetThreatColor(ThreatLevel: Double): Integer;
+begin
+  // TODO: Implement threat color gradient
+  // 0.0 = Green (safe)
+  // 0.5 = Yellow (caution)
+  // 1.0 = Red (danger)
+  
+  if ThreatLevel < 0.3 then
+    Result := THEME_LIME_GREEN
+  else if ThreatLevel < 0.6 then
+    Result := THEME_NEON_CYAN
+  else if ThreatLevel < 0.8 then
+    Result := $00A5FF  // Orange
+  else
+    Result := THEME_DANGER_RED;
+end;
+
+{------------------------------------------------------------------------------}
+{ ApplyAlpha - Create ARGB color with alpha                                    }
+{------------------------------------------------------------------------------}
+function ApplyAlpha(Color: Integer; Alpha: Byte): Integer;
+begin
+  // TODO: Implement alpha application
+  // Returns color with alpha channel for transparency
+  Result := Color or (Alpha shl 24);
+end;

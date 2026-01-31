@@ -1,0 +1,322 @@
+{==============================================================================}
+{  OmniPK Engine - FreezeDetection Module                                      }
+{  Tracks freeze status, duration, and type for both player and opponent.      }
+{  NO DRAWING - Logic only.                                                    }
+{  Uses: GameAPI (GetMyGraphic, GetOpponentGraphic, GetMyTile, GetOpponentTile)}
+{  Config: data/config.json freeze_detection section                           }
+{==============================================================================}
+
+{$DEFINE OMNIPK_FREEZEDETECTION}
+
+type
+  TFreezeType = (
+    ftNone,
+    ftIceBarrage,     // 20 ticks (12 seconds)
+    ftIceBlitz,       // 15 ticks (9 seconds)
+    ftIceBurst,       // 10 ticks (6 seconds)
+    ftIceRush,        // 5 ticks (3 seconds)
+    ftEntangle,       // 15 ticks (9 seconds)
+    ftSnare,          // 10 ticks (6 seconds)
+    ftBind            // 5 ticks (3 seconds)
+  );
+
+  TFreezeInfo = record
+    IsFrozen: Boolean;
+    FreezeType: TFreezeType;
+    FreezeStartTick: Integer;
+    FreezeDurationTicks: Integer;
+    FreezeEndTick: Integer;
+    TicksRemaining: Integer;
+  end;
+
+  TFreezeDetectionState = record
+    PlayerFreeze: TFreezeInfo;
+    OpponentFreeze: TFreezeInfo;
+    LastPlayerPosition: TPoint;
+    LastOpponentPosition: TPoint;
+    PositionUnchangedTicks: Integer;
+    OpponentPositionUnchangedTicks: Integer;
+    IsInitialized: Boolean;
+  end;
+
+var
+  FreezeDetectionState: TFreezeDetectionState;
+
+{------------------------------------------------------------------------------}
+{ Freeze graphic IDs - OSRS graphic IDs shown on frozen target                 }
+{ Sync with config.json freeze_detection.graphic_ids                           }
+{------------------------------------------------------------------------------}
+const
+  FREEZE_GRAPHIC_COUNT = 7;
+  FREEZE_GRAPHICS: array [0..FREEZE_GRAPHIC_COUNT-1] of Integer = (
+    363, 366, 367, 369, 437, 438, 439
+  );
+
+{------------------------------------------------------------------------------}
+{ IsFreezeGraphic - Check if graphic ID indicates frozen state                 }
+{------------------------------------------------------------------------------}
+function IsFreezeGraphic(GraphicId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to FREEZE_GRAPHIC_COUNT - 1 do
+  begin
+    if FREEZE_GRAPHICS[i] = GraphicId then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ GraphicToFreezeType - Map graphic ID to freeze type (best guess)             }
+{ Higher graphics = longer freezes (369=barrage, 363=burst, etc)               }
+{------------------------------------------------------------------------------}
+function GraphicToFreezeType(GraphicId: Integer): TFreezeType;
+begin
+  case GraphicId of
+    369: Result := ftIceBarrage;
+    367: Result := ftIceBlitz;
+    366, 368: Result := ftIceBurst;
+    363: Result := ftIceRush;
+    437, 438: Result := ftEntangle;
+    439: Result := ftSnare;
+  else
+    Result := ftIceBarrage; { Default to longest for safety }
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetFreezeDuration - Returns freeze duration in ticks for a freeze type       }
+{ Sync with config.json and spell_profiles.json                                }
+{------------------------------------------------------------------------------}
+function GetFreezeDuration(FreezeType: TFreezeType): Integer;
+begin
+  case FreezeType of
+    ftIceBarrage: Result := 20;
+    ftIceBlitz: Result := 15;
+    ftIceBurst: Result := 10;
+    ftIceRush: Result := 5;
+    ftEntangle: Result := 15;
+    ftSnare: Result := 10;
+    ftBind: Result := 5;
+  else
+    Result := 0;
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsPlayerFrozen - Returns true if player is currently frozen                  }
+{------------------------------------------------------------------------------}
+function IsPlayerFrozen: Boolean;
+begin
+  Result := FreezeDetectionState.PlayerFreeze.IsFrozen;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsOpponentFrozen - Returns true if opponent is currently frozen              }
+{------------------------------------------------------------------------------}
+function IsOpponentFrozen: Boolean;
+begin
+  Result := FreezeDetectionState.OpponentFreeze.IsFrozen;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPlayerFreezeTicksRemaining - Returns ticks until player unfreezes         }
+{------------------------------------------------------------------------------}
+function GetPlayerFreezeTicksRemaining: Integer;
+begin
+  Result := FreezeDetectionState.PlayerFreeze.TicksRemaining;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetFreezeTimeLeft - Alias for player freeze ticks remaining                  }
+{------------------------------------------------------------------------------}
+function GetFreezeTimeLeft: Integer;
+begin
+  Result := GetPlayerFreezeTicksRemaining;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentFreezeTicksRemaining - Returns ticks until opponent unfreezes     }
+{------------------------------------------------------------------------------}
+function GetOpponentFreezeTicksRemaining: Integer;
+begin
+  Result := FreezeDetectionState.OpponentFreeze.TicksRemaining;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPlayerFreezeType - Returns the type of freeze on player                   }
+{------------------------------------------------------------------------------}
+function GetPlayerFreezeType: TFreezeType;
+begin
+  Result := FreezeDetectionState.PlayerFreeze.FreezeType;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetOpponentFreezeType - Returns the type of freeze on opponent               }
+{------------------------------------------------------------------------------}
+function GetOpponentFreezeType: TFreezeType;
+begin
+  Result := FreezeDetectionState.OpponentFreeze.FreezeType;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitFreezeDetection - Initialize the freeze detection system                 }
+{------------------------------------------------------------------------------}
+procedure InitFreezeDetection;
+begin
+  FreezeDetectionState.PlayerFreeze.IsFrozen := False;
+  FreezeDetectionState.PlayerFreeze.FreezeType := ftNone;
+  FreezeDetectionState.PlayerFreeze.FreezeStartTick := 0;
+  FreezeDetectionState.PlayerFreeze.FreezeDurationTicks := 0;
+  FreezeDetectionState.PlayerFreeze.FreezeEndTick := 0;
+  FreezeDetectionState.PlayerFreeze.TicksRemaining := 0;
+  
+  FreezeDetectionState.OpponentFreeze.IsFrozen := False;
+  FreezeDetectionState.OpponentFreeze.FreezeType := ftNone;
+  FreezeDetectionState.OpponentFreeze.FreezeStartTick := 0;
+  FreezeDetectionState.OpponentFreeze.FreezeDurationTicks := 0;
+  FreezeDetectionState.OpponentFreeze.FreezeEndTick := 0;
+  FreezeDetectionState.OpponentFreeze.TicksRemaining := 0;
+  
+  FreezeDetectionState.LastPlayerPosition := Point(0, 0);
+  FreezeDetectionState.LastOpponentPosition := Point(0, 0);
+  FreezeDetectionState.PositionUnchangedTicks := 0;
+  FreezeDetectionState.OpponentPositionUnchangedTicks := 0;
+  FreezeDetectionState.IsInitialized := True;
+  
+  WriteLn('[FreezeDetection] Initialized');
+end;
+
+{------------------------------------------------------------------------------}
+{ ApplyFreeze - Apply freeze to player or opponent                             }
+{------------------------------------------------------------------------------}
+procedure ApplyFreezeToPlayer(FreezeType: TFreezeType; CurrentTick: Integer);
+var
+  Duration: Integer;
+begin
+  Duration := GetFreezeDuration(FreezeType);
+  FreezeDetectionState.PlayerFreeze.IsFrozen := True;
+  FreezeDetectionState.PlayerFreeze.FreezeType := FreezeType;
+  FreezeDetectionState.PlayerFreeze.FreezeStartTick := CurrentTick;
+  FreezeDetectionState.PlayerFreeze.FreezeDurationTicks := Duration;
+  FreezeDetectionState.PlayerFreeze.FreezeEndTick := CurrentTick + Duration;
+  FreezeDetectionState.PlayerFreeze.TicksRemaining := Duration;
+end;
+
+procedure ApplyFreezeToOpponent(FreezeType: TFreezeType; CurrentTick: Integer);
+var
+  Duration: Integer;
+begin
+  Duration := GetFreezeDuration(FreezeType);
+  FreezeDetectionState.OpponentFreeze.IsFrozen := True;
+  FreezeDetectionState.OpponentFreeze.FreezeType := FreezeType;
+  FreezeDetectionState.OpponentFreeze.FreezeStartTick := CurrentTick;
+  FreezeDetectionState.OpponentFreeze.FreezeDurationTicks := Duration;
+  FreezeDetectionState.OpponentFreeze.FreezeEndTick := CurrentTick + Duration;
+  FreezeDetectionState.OpponentFreeze.TicksRemaining := Duration;
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdateFreezeDetection - Update freeze states (call every frame)              }
+{------------------------------------------------------------------------------}
+procedure UpdateFreezeDetection;
+var
+  CurrentTick: Integer;
+  MyGraphic, OppGraphic: Integer;
+  MyTile, OppTile: TPoint;
+  DetectedFreezeType: TFreezeType;
+begin
+  if not FreezeDetectionState.IsInitialized then
+    Exit;
+  
+  CurrentTick := GetCurrentTick;
+  
+  { Get current graphics and positions from game }
+  MyGraphic := GetMyGraphic;
+  OppGraphic := GetOpponentGraphic;
+  MyTile := GetMyTile;
+  OppTile := GetOpponentTile;
+  
+  { === PLAYER FREEZE DETECTION === }
+  { Detect new freeze: graphic matches freeze ID }
+  if IsFreezeGraphic(MyGraphic) then
+  begin
+    DetectedFreezeType := GraphicToFreezeType(MyGraphic);
+    { Only apply if not already frozen or if re-frozen (new freeze) }
+    if not FreezeDetectionState.PlayerFreeze.IsFrozen then
+      ApplyFreezeToPlayer(DetectedFreezeType, CurrentTick)
+    else
+    begin
+      { Extend or refresh freeze if we see the graphic again }
+      FreezeDetectionState.PlayerFreeze.FreezeEndTick := CurrentTick + 
+        GetFreezeDuration(DetectedFreezeType);
+      FreezeDetectionState.PlayerFreeze.FreezeType := DetectedFreezeType;
+    end;
+  end
+  else
+  begin
+    { Check movement: if player moved while "frozen", they may have unfrozen }
+    if (MyTile.X = FreezeDetectionState.LastPlayerPosition.X) and
+       (MyTile.Y = FreezeDetectionState.LastPlayerPosition.Y) then
+      Inc(FreezeDetectionState.PositionUnchangedTicks)
+    else
+      FreezeDetectionState.PositionUnchangedTicks := 0;
+    
+    FreezeDetectionState.LastPlayerPosition := MyTile;
+  end;
+  
+  { === OPPONENT FREEZE DETECTION === }
+  if IsFreezeGraphic(OppGraphic) then
+  begin
+    DetectedFreezeType := GraphicToFreezeType(OppGraphic);
+    if not FreezeDetectionState.OpponentFreeze.IsFrozen then
+      ApplyFreezeToOpponent(DetectedFreezeType, CurrentTick)
+    else
+    begin
+      FreezeDetectionState.OpponentFreeze.FreezeEndTick := CurrentTick + 
+        GetFreezeDuration(DetectedFreezeType);
+      FreezeDetectionState.OpponentFreeze.FreezeType := DetectedFreezeType;
+    end;
+  end
+  else
+  begin
+    if (OppTile.X = FreezeDetectionState.LastOpponentPosition.X) and
+       (OppTile.Y = FreezeDetectionState.LastOpponentPosition.Y) then
+      Inc(FreezeDetectionState.OpponentPositionUnchangedTicks)
+    else
+      FreezeDetectionState.OpponentPositionUnchangedTicks := 0;
+    
+    FreezeDetectionState.LastOpponentPosition := OppTile;
+  end;
+  
+  { === DECREMENT TIMERS (tick-based) === }
+  if FreezeDetectionState.PlayerFreeze.IsFrozen then
+  begin
+    FreezeDetectionState.PlayerFreeze.TicksRemaining := 
+      FreezeDetectionState.PlayerFreeze.FreezeEndTick - CurrentTick;
+    
+    if FreezeDetectionState.PlayerFreeze.TicksRemaining <= 0 then
+    begin
+      FreezeDetectionState.PlayerFreeze.IsFrozen := False;
+      FreezeDetectionState.PlayerFreeze.FreezeType := ftNone;
+      FreezeDetectionState.PlayerFreeze.TicksRemaining := 0;
+    end;
+  end;
+  
+  if FreezeDetectionState.OpponentFreeze.IsFrozen then
+  begin
+    FreezeDetectionState.OpponentFreeze.TicksRemaining := 
+      FreezeDetectionState.OpponentFreeze.FreezeEndTick - CurrentTick;
+    
+    if FreezeDetectionState.OpponentFreeze.TicksRemaining <= 0 then
+    begin
+      FreezeDetectionState.OpponentFreeze.IsFrozen := False;
+      FreezeDetectionState.OpponentFreeze.FreezeType := ftNone;
+      FreezeDetectionState.OpponentFreeze.TicksRemaining := 0;
+    end;
+  end;
+end;

@@ -1,0 +1,242 @@
+{==============================================================================}
+{  OmniPK Engine - KOAnalyzer Module                                           }
+{  Detects KO windows: prayer mismatch, freeze, movement lock, desync, HP.     }
+{  NO DRAWING - Logic only.                                                    }
+{  Uses: GameAPI, FreezeDetection, MovementHelper, PrayerHelper,               }
+{        AttackStyleDetector, DesyncEngine                                     }
+{  Config: data/config.json thresholds                                         }
+{==============================================================================}
+
+{$DEFINE OMNIPK_KOANALYZER}
+
+type
+  TKOThreatLevel = (
+    ktNone, ktLow, ktMedium, ktHigh, ktCritical
+  );
+
+  TKOWindowInfo = record
+    IsActive: Boolean;
+    ThreatLevel: TKOThreatLevel;
+    PotentialDamage: Integer;
+    TicksUntilHit: Integer;
+    RequiresEat: Boolean;
+    RequiresPrayerSwap: Boolean;
+  end;
+
+  TKOAnalyzerState = record
+    PlayerHP: Integer;
+    PlayerMaxHP: Integer;
+    OpponentMaxHit: Integer;
+    KOWindow: TKOWindowInfo;
+    KORiskScore: Double;
+    ComboThreat: Boolean;
+    LastDamageTick: Integer;
+    DamageHistory: array of Integer;
+    IsInitialized: Boolean;
+  end;
+
+var
+  KOAnalyzerState: TKOAnalyzerState;
+
+const
+  SAFE_HP_BUFFER = 5;
+  PRAYER_MISMATCH_RISK = 0.25;
+  FREEZE_LOCK_RISK = 0.2;
+  MOVEMENT_LOCK_RISK = 0.15;
+  DESYNC_DISADVANTAGE_RISK = 0.1;
+
+{------------------------------------------------------------------------------}
+{ IsKOWindowActive - Returns true if in a KO danger window                     }
+{------------------------------------------------------------------------------}
+function IsKOWindowActive: Boolean;
+begin
+  Result := KOAnalyzerState.KOWindow.IsActive;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetKORiskScore - Returns KO risk score (0.0 - 1.0)                           }
+{------------------------------------------------------------------------------}
+function GetKORiskScore: Double;
+begin
+  Result := KOAnalyzerState.KORiskScore;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetKOThreatLevel - Returns current KO threat level                           }
+{------------------------------------------------------------------------------}
+function GetKOThreatLevel: TKOThreatLevel;
+begin
+  Result := KOAnalyzerState.KOWindow.ThreatLevel;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPotentialDamage - Returns potential incoming damage                       }
+{------------------------------------------------------------------------------}
+function GetPotentialDamage: Integer;
+begin
+  Result := KOAnalyzerState.KOWindow.PotentialDamage;
+end;
+
+{------------------------------------------------------------------------------}
+{ ShouldEatNow - Returns true if eating is recommended                         }
+{------------------------------------------------------------------------------}
+function ShouldEatNow: Boolean;
+begin
+  Result := KOAnalyzerState.KOWindow.RequiresEat;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetPlayerHP - Returns current player HP                                      }
+{------------------------------------------------------------------------------}
+function GetPlayerHP: Integer;
+begin
+  Result := KOAnalyzerState.PlayerHP;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetSafeHP - Returns HP threshold to stay above                               }
+{------------------------------------------------------------------------------}
+function GetSafeHP: Integer;
+begin
+  Result := KOAnalyzerState.OpponentMaxHit + SAFE_HP_BUFFER;
+  if Result < 10 then Result := 10;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsComboThreat - Returns true if combo attack is incoming                     }
+{------------------------------------------------------------------------------}
+function IsComboThreat: Boolean;
+begin
+  Result := KOAnalyzerState.ComboThreat;
+end;
+
+{------------------------------------------------------------------------------}
+{ CalculateKORiskScore - Risk from HP, damage, and vulnerability factors       }
+{------------------------------------------------------------------------------}
+function CalculateKORiskScore: Double;
+var
+  HPRatio, DamageRatio, BaseRisk: Double;
+  Modifier: Double;
+begin
+  if KOAnalyzerState.PlayerMaxHP <= 0 then
+  begin
+    Result := 0.0;
+    Exit;
+  end;
+  
+  HPRatio := KOAnalyzerState.PlayerHP / KOAnalyzerState.PlayerMaxHP;
+  
+  if KOAnalyzerState.PlayerHP <= 0 then
+    DamageRatio := 1.0
+  else
+    DamageRatio := KOAnalyzerState.OpponentMaxHit / KOAnalyzerState.PlayerHP;
+  
+  BaseRisk := (1.0 - HPRatio) * 0.35 + Min(DamageRatio, 1.0) * 0.45;
+  Modifier := 0.0;
+  
+  { Prayer mismatch: wrong prayer = 50% more damage taken }
+  if IsPrayerMismatch then
+    Modifier := Modifier + PRAYER_MISMATCH_RISK;
+  
+  { Freeze lock: can't eat or move }
+  if IsPlayerFrozen then
+    Modifier := Modifier + FREEZE_LOCK_RISK;
+  
+  { Movement lock: can't escape }
+  if IsMovementLocked then
+    Modifier := Modifier + MOVEMENT_LOCK_RISK;
+  
+  { Desync disadvantage: they act before us }
+  if not HasDesyncAdvantage and (GetTickOffset < 0) then
+    Modifier := Modifier + DESYNC_DISADVANTAGE_RISK;
+  
+  { Attack incoming: opponent attack ready }
+  if IsOpponentAttackReady then
+    Modifier := Modifier + 0.05;
+  
+  Result := BaseRisk + Modifier;
+  if Result > 1.0 then Result := 1.0;
+  if Result < 0.0 then Result := 0.0;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitKOAnalyzer - Initialize the KO analyzer system                           }
+{------------------------------------------------------------------------------}
+procedure InitKOAnalyzer;
+begin
+  KOAnalyzerState.PlayerHP := 99;
+  KOAnalyzerState.PlayerMaxHP := 99;
+  KOAnalyzerState.OpponentMaxHit := 50;
+  KOAnalyzerState.KOWindow.IsActive := False;
+  KOAnalyzerState.KOWindow.ThreatLevel := ktNone;
+  KOAnalyzerState.KOWindow.PotentialDamage := 0;
+  KOAnalyzerState.KOWindow.TicksUntilHit := 0;
+  KOAnalyzerState.KOWindow.RequiresEat := False;
+  KOAnalyzerState.KOWindow.RequiresPrayerSwap := False;
+  KOAnalyzerState.KORiskScore := 0.0;
+  KOAnalyzerState.ComboThreat := False;
+  KOAnalyzerState.LastDamageTick := 0;
+  SetLength(KOAnalyzerState.DamageHistory, 0);
+  KOAnalyzerState.IsInitialized := True;
+  
+  WriteLn('[KOAnalyzer] Initialized');
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdateKOAnalyzer - Update KO analysis (call every frame)                     }
+{------------------------------------------------------------------------------}
+procedure UpdateKOAnalyzer;
+var
+  HPPct: Single;
+  WeaponInfo: TWeaponInfo;
+begin
+  if not KOAnalyzerState.IsInitialized then Exit;
+  
+  { Read player HP from game }
+  HPPct := GetMyHPPercent;
+  KOAnalyzerState.PlayerHP := Round(HPPct * 99);
+  if KOAnalyzerState.PlayerHP < 0 then KOAnalyzerState.PlayerHP := 0;
+  if KOAnalyzerState.PlayerMaxHP <= 0 then KOAnalyzerState.PlayerMaxHP := 99;
+  
+  { Get opponent max hit from AttackStyleDetector }
+  WeaponInfo := GetOpponentWeapon;
+  if WeaponInfo.MaxHit > 0 then
+    KOAnalyzerState.OpponentMaxHit := WeaponInfo.MaxHit
+  else
+    KOAnalyzerState.OpponentMaxHit := 50;
+  
+  { Potential damage = opponent max hit if attack ready }
+  if IsOpponentAttackReady then
+    KOAnalyzerState.KOWindow.PotentialDamage := KOAnalyzerState.OpponentMaxHit
+  else
+    KOAnalyzerState.KOWindow.PotentialDamage := 0;
+  
+  KOAnalyzerState.KOWindow.TicksUntilHit := GetAttackCooldownRemaining;
+  
+  { Prayer swap needed }
+  KOAnalyzerState.KOWindow.RequiresPrayerSwap := IsPrayerMismatch;
+  
+  { Combo threat: attack ready + low HP + prayer wrong }
+  KOAnalyzerState.ComboThreat := IsOpponentAttackReady and 
+    (KOAnalyzerState.PlayerHP <= GetSafeHP) and IsPrayerMismatch;
+  
+  { Calculate risk and threat level }
+  KOAnalyzerState.KORiskScore := CalculateKORiskScore;
+  
+  if KOAnalyzerState.KORiskScore >= 0.9 then
+    KOAnalyzerState.KOWindow.ThreatLevel := ktCritical
+  else if KOAnalyzerState.KORiskScore >= 0.7 then
+    KOAnalyzerState.KOWindow.ThreatLevel := ktHigh
+  else if KOAnalyzerState.KORiskScore >= 0.5 then
+    KOAnalyzerState.KOWindow.ThreatLevel := ktMedium
+  else if KOAnalyzerState.KORiskScore >= 0.3 then
+    KOAnalyzerState.KOWindow.ThreatLevel := ktLow
+  else
+    KOAnalyzerState.KOWindow.ThreatLevel := ktNone;
+  
+  KOAnalyzerState.KOWindow.IsActive := 
+    KOAnalyzerState.KOWindow.ThreatLevel >= ktMedium;
+  
+  KOAnalyzerState.KOWindow.RequiresEat := 
+    KOAnalyzerState.PlayerHP <= GetSafeHP;
+end;

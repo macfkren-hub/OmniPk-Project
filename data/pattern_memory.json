@@ -1,0 +1,46 @@
+{
+  "_comment": "OmniPK Engine - Pattern Memory",
+  "_version": "1.0.0",
+  "_description": "Learned opponent behavior patterns (auto-populated during gameplay)",
+  
+  "opponents": {},
+  
+  "global_patterns": {
+    "average_eat_hp": 45,
+    "average_panic_hp": 25,
+    "common_eat_foods": ["shark", "karambwan", "anglerfish"],
+    "average_style_switch_interval_ticks": 8
+  },
+  
+  "session_data": {
+    "last_updated": null,
+    "total_fights": 0,
+    "total_kills": 0,
+    "total_deaths": 0
+  },
+  
+  "pattern_schema": {
+    "_example_opponent": {
+      "name": "ExamplePlayer",
+      "fights": 0,
+      "eat_patterns": {
+        "average_hp": 50,
+        "panic_threshold": 30,
+        "eat_rhythm_ticks": 5,
+        "preferred_food": "shark"
+      },
+      "attack_patterns": {
+        "style_preference": "tribrid",
+        "common_openers": ["ranged", "magic"],
+        "spec_timing": "low_hp",
+        "switch_frequency": 0.5
+      },
+      "movement_patterns": {
+        "tends_to_run": false,
+        "kite_distance": 1,
+        "freeze_reaction": "immediate_eat"
+      },
+      "last_seen": null
+    }
+  }
+}

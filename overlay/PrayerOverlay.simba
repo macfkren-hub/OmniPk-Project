@@ -1,0 +1,72 @@
+{==============================================================================}
+{  OmniPK Engine - PrayerOverlay Module                                        }
+{  Prayer indicators. Reads from PrayerHelper.                                 }
+{  VISUALS ONLY - No logic, no state modification.                             }
+{==============================================================================}
+
+{$DEFINE OMNIPK_PRAYEROVERLAY}
+
+const
+  PRAYER_COLOR_CORRECT   = $00FF00;
+  PRAYER_COLOR_MISMATCH  = $4444FF;
+  PRAYER_COLOR_MELEE     = $00A5FF;
+  PRAYER_COLOR_RANGED    = $00FF00;
+  PRAYER_COLOR_MAGIC     = $FFFF00;
+
+const
+  PRAYER_X = 400;
+  PRAYER_Y = 50;
+
+function GetPrayerColor(Prayer: TPrayerType): Integer;
+begin
+  case Prayer of
+    ptProtectMelee: Result := PRAYER_COLOR_MELEE;
+    ptProtectRanged: Result := PRAYER_COLOR_RANGED;
+    ptProtectMagic: Result := PRAYER_COLOR_MAGIC;
+  else
+    Result := $FFFFFF;
+  end;
+end;
+
+function GetPrayerName(Prayer: TPrayerType): String;
+begin
+  case Prayer of
+    ptNone: Result := 'NONE';
+    ptProtectMelee: Result := 'MELEE';
+    ptProtectRanged: Result := 'RANGED';
+    ptProtectMagic: Result := 'MAGIC';
+  else
+    Result := '---';
+  end;
+end;
+
+procedure DrawPrayerOverlay;
+var
+  CurrentPrayer, RecommendedPray: TPrayerType;
+  IsMismatch: Boolean;
+  Text: String;
+begin
+  CurrentPrayer := GetCurrentPrayer;
+  RecommendedPray := RecommendedPrayer;
+  IsMismatch := IsPrayerMismatch;
+  
+  { Mismatch warning - context-aware: prominent when wrong prayer }
+  if IsMismatch then
+  begin
+    Text := Format('USE %s!', [GetPrayerName(RecommendedPray)]);
+    OmniPK_DrawText(PRAYER_X, PRAYER_Y, Text, PRAYER_COLOR_MISMATCH);
+  end
+  else
+  begin
+    Text := Format('Prayer: %s', [GetPrayerName(CurrentPrayer)]);
+    if RecommendedPray <> ptNone then
+      OmniPK_DrawText(PRAYER_X, PRAYER_Y, Text, PRAYER_COLOR_CORRECT)
+    else
+      OmniPK_DrawText(PRAYER_X, PRAYER_Y, Text, $FFFFFF);
+  end;
+  
+  { Low prayer warning }
+  if GetPrayerPoints < 20 then
+    OmniPK_DrawText(PRAYER_X, PRAYER_Y + 18, 
+      Format('PP: %d', [GetPrayerPoints]), PRAYER_COLOR_MISMATCH);
+end;
