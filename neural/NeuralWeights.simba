@@ -1,0 +1,25 @@
+{==============================================================================}
+{  OmniPK Engine - NeuralWeights Module                                        }
+{  Stores small weight matrices for neural-assisted scoring.                   }
+{==============================================================================}
+
+{$DEFINE OMNIPK_NEURALWEIGHTS}
+
+var
+  Weights: array of Double;
+
+procedure LoadWeights;
+begin
+  SetLength(Weights, 10);
+  { Load from data/neural_weights.json }
+end;
+
+procedure SaveWeights;
+begin
+  { Save to data/neural_weights.json }
+end;
+
+procedure UpdateWeights(Delta: Double);
+begin
+  { Apply learning delta }
+end;

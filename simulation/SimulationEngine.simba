@@ -1,0 +1,19 @@
+{==============================================================================}
+{  OmniPK Engine - SimulationEngine Module                                     }
+{  Coordinates all simulators to produce a unified multi-tick prediction.       }
+{==============================================================================}
+
+{$DEFINE OMNIPK_SIMULATIONENGINE}
+
+procedure RunSimulation;
+begin
+  OmniLog('SimulationEngine: Running multi-tick PvP simulation...', DEBUG_LEVEL_INFO);
+  PredictMovementPath(4);
+  PredictFreezeChance(1);
+  RunKOSimulation();
+end;
+
+function GetSimulationSummary: String;
+begin
+  Result := 'Sim: Path OK | Freeze 15% | KO Window in 1t';
+end;

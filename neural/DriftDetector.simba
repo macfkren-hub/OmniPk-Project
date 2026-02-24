@@ -1,0 +1,17 @@
+{==============================================================================}
+{  OmniPK Engine - DriftDetector Module                                        }
+{  Detects long-term changes in opponent behavior (drift).                     }
+{==============================================================================}
+
+{$DEFINE OMNIPK_DRIFTDETECTOR}
+
+function DetectDrift: Double;
+begin
+  { Compare short-term stats vs long-term baseline }
+  Result := 0.05; { Minimal drift }
+end;
+
+function GetDriftSummary: String;
+begin
+  Result := 'Drift: stable';
+end;

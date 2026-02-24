@@ -1,0 +1,31 @@
+{==============================================================================}
+{  OmniPK Engine - TileHeatmapOverlay Module                                   }
+{  Visualizes tile danger levels using weights.                                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_TILEHEATMAPOVERLAY}
+
+procedure DrawTileHeatmapOverlay;
+var
+  X, Y: Integer;
+  TilePos: TPoint;
+  Weight: Double;
+  HeatColor: Integer;
+  PlayerTile: TPoint;
+begin
+  if not GetConfigBoolean('overlay_tileheatmap_enabled', True) then Exit;
+
+  PlayerTile := GetPlayerTile();
+
+  for X := PlayerTile.X - 5 to PlayerTile.X + 5 do
+    for Y := PlayerTile.Y - 5 to PlayerTile.Y + 5 do
+    begin
+      Weight := GetTileWeight(X, Y); { 0.0 safe, 1.0 dangerous }
+      if Weight > 0.1 then
+      begin
+        TilePos := OmniPK_WorldToScreen(X, Y);
+        HeatColor := SmoothColorShift($00FF00, $0000FF, Weight);
+        OmniPK_DrawRect(TilePos.X - 8, TilePos.Y - 8, 16, 16, HeatColor, True);
+      end;
+    end;
+end;

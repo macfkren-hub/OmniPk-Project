@@ -1,0 +1,16 @@
+{==============================================================================}
+{  OmniPK Engine - FreezeSimulator Module                                      }
+{  Predicts freeze outcomes for the next few ticks.                            }
+{==============================================================================}
+
+{$DEFINE OMNIPK_FREEZESIMULATOR}
+
+function PredictFreezeChance(TicksAhead: Integer): Double;
+begin
+  Result := 0.15; { Placeholder }
+end;
+
+function PredictedFreezeDuration: Integer;
+begin
+  Result := 20;
+end;

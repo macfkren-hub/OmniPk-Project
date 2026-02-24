@@ -1,0 +1,34 @@
+{==============================================================================}
+{  OmniPK Engine - ArchetypeClassifier Module                                  }
+{  Classifies opponents into behavior-based archetypes (rusher, tanker, etc.)   }
+{==============================================================================}
+
+{$DEFINE OMNIPK_ARCHETYPECLASSIFIER}
+
+type
+  TPKerArchetype = (
+    paUnknown, paRusher, paTriangleSwitcher, paPanicEater, paStepUnderSpammer, paTank
+  );
+
+function ClassifyOpponent: TPKerArchetype;
+var
+  Stats: TBehaviorStats;
+begin
+  Stats := GetBehaviorStats();
+
+  if (Stats.SpecCount > 0) and (Stats.EatCount = 0) then
+    Result := paRusher
+  else if (Stats.EatCount > 3) and (Stats.AvgEatHP > 70) then
+    Result := paTank
+  else if (Stats.StepUnderFrequency > 0.5) then
+    Result := paStepUnderSpammer
+  else if (Stats.Splashes > 2) then
+    Result := paTriangleSwitcher
+  else
+    Result := paUnknown;
+end;
+
+function GetArchetypeConfidence: Double;
+begin
+  Result := 0.85;
+end;

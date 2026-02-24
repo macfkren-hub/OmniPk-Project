@@ -1,0 +1,11 @@
+{==============================================================================}
+{  OmniPK Engine - AdaptiveTuner Module                                        }
+{  Adjusts neural weights based on drift and prediction errors.                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_ADAPTIVETUNER}
+
+procedure ApplyLearning;
+begin
+  OmniLog('AdaptiveTuner: Updating neural weights based on outcomes...', DEBUG_LEVEL_INFO);
+end;

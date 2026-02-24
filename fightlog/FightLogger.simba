@@ -1,0 +1,56 @@
+{==============================================================================}
+{  OmniPK Engine - FightLogger Module                                          }
+{  Tick-by-tick logging of fight data for analysis and replay.                 }
+{==============================================================================}
+
+{$DEFINE OMNIPK_FIGHTLOGGER}
+
+type
+  TFightTick = record
+    Tick: Integer;
+    PlayerTile, OpponentTile: TPoint;
+    PlayerHP, OpponentHP: Integer;
+    PlayerPrayer: TPrayerType;
+    OpponentStyle: TAttackStyle;
+    KORisk: Double;
+    DesyncAdv: Boolean;
+    Frozen: Boolean;
+    Event: String;
+  end;
+
+var
+  FightHistory: array of TFightTick;
+  IsLogging: Boolean;
+
+procedure InitFightLogger;
+begin
+  SetLength(FightHistory, 0);
+  IsLogging := True;
+end;
+
+procedure LogFightTick(Event: String = '');
+var
+  CurrTick: TFightTick;
+begin
+  if not IsLogging then Exit;
+
+  CurrTick.Tick := GetCurrentTick();
+  CurrTick.PlayerTile := GetPlayerTile();
+  CurrTick.OpponentTile := GetOpponentTile();
+  CurrTick.PlayerHP := GetPlayerHP();
+  CurrTick.PlayerPrayer := GetCurrentPrayer();
+  CurrTick.OpponentStyle := GetOpponentAttackStyle();
+  CurrTick.KORisk := GetKORiskScore();
+  CurrTick.DesyncAdv := HasDesyncAdvantage();
+  CurrTick.Frozen := IsPlayerFrozen();
+  CurrTick.Event := Event;
+
+  SetLength(FightHistory, Length(FightHistory) + 1);
+  FightHistory[High(FightHistory)] := CurrTick;
+end;
+
+procedure SaveFightLog(FileName: String);
+begin
+  OmniLog('Saving fight log to ' + FileName, DEBUG_LEVEL_INFO);
+  { In real implementation, serialize FightHistory to JSON }
+end;

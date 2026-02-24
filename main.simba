@@ -30,6 +30,9 @@ program OmniPKEngine;
 {$I utils/DebugUtils.simba}
 {$I utils/GameAPI.simba}
 {$I utils/DrawAPI.simba}
+{$I utils/AnimationUtils.simba}
+{$I utils/UITheme.simba}
+{$I utils/LogoAssets.simba}
 
 {------------------------------------------------------------------------------}
 { Include Core Modules (in dependency order)                                   }
@@ -53,6 +56,70 @@ program OmniPKEngine;
 {$I overlay/KOOverlay.simba}
 {$I overlay/PrayerOverlay.simba}
 {$I overlay/DebugOverlay.simba}
+{$I overlay/TickPulseOverlay.simba}
+{$I overlay/FreezeProjectionOverlay.simba}
+{$I overlay/SplashAuraOverlay.simba}
+{$I overlay/MovementVectorOverlay.simba}
+{$I overlay/TileHeatmapOverlay.simba}
+{$I overlay/SimulationOverlay.simba}
+{$I overlay/NeuralOverlay.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Automation Modules                                                   }
+{------------------------------------------------------------------------------}
+{$I automation/AutoPrayer.simba}
+{$I automation/AutoMovement.simba}
+{$I automation/AutoFreeze.simba}
+{$I automation/AutoSpec.simba}
+{$I automation/AutoEat.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Logging & Tuning Modules                                             }
+{------------------------------------------------------------------------------}
+{$I fightlog/FightLogger.simba}
+{$I fightlog/FightReplay.simba}
+{$I autotune/AutoTuner.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Cloud Sync Modules                                                   }
+{------------------------------------------------------------------------------}
+{$I cloud/PatternSync.simba}
+{$I cloud/HeatmapSync.simba}
+{$I cloud/ConfigSync.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Profiling Modules                                                    }
+{------------------------------------------------------------------------------}
+{$I profiling/BehaviorModel.simba}
+{$I profiling/TransitionModel.simba}
+{$I profiling/ArchetypeClassifier.simba}
+{$I profiling/PredictionEngine.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Simulation Modules                                                   }
+{------------------------------------------------------------------------------}
+{$I simulation/MovementSimulator.simba}
+{$I simulation/FreezeSimulator.simba}
+{$I simulation/KOSimulator.simba}
+{$I simulation/DesyncSimulator.simba}
+{$I simulation/SimulationEngine.simba}
+
+{------------------------------------------------------------------------------}
+{ Include Neural Modules                                                       }
+{------------------------------------------------------------------------------}
+{$I neural/NeuralWeights.simba}
+{$I neural/NeuralScoring.simba}
+{$I neural/DriftDetector.simba}
+{$I neural/AdaptiveTuner.simba}
+
+{------------------------------------------------------------------------------}
+{ Include GUI Modules                                                          }
+{------------------------------------------------------------------------------}
+{$I gui/HotkeyWizard.simba}
+{$I gui/ModeSelector.simba}
+{$I gui/ModuleTogglePanel.simba}
+{$I gui/StatusHUD.simba}
+{$I gui/GUIManager.simba}
 
 {------------------------------------------------------------------------------}
 { Engine State                                                                 }
@@ -67,6 +134,11 @@ var
 {------------------------------------------------------------------------------}
 procedure InitializeAllModules;
 begin
+  InitFightLogger;
+  InitAutoTuner;
+  ResetBehaviorSession();
+  LoadWeights();
+  InitGUIManager();
   WriteLn('========================================');
   WriteLn('  OmniPK Engine v1.0.0 - Initializing  ');
   WriteLn('========================================');
@@ -151,6 +223,29 @@ begin
   
   // 10. KOAnalyzer - LAST (needs all other data for analysis)
   UpdateKOAnalyzer;
+
+  // Profiling Updates
+  ClassifyOpponent();
+  PredictNextAction();
+
+  // Simulation Updates
+  RunSimulation();
+
+  // Neural Updates
+  DetectDrift();
+
+  // Logging and Tuning updates
+  LogFightTick();
+  UpdateAutoTuner();
+  UpdateReplay();
+
+  // Cloud Sync (check every 1500 ticks ~ 15 mins)
+  if (GetCurrentTick() mod 1500) = 0 then
+  begin
+    SyncPatterns();
+    SyncHeatmaps();
+    SyncConfig();
+  end;
 end;
 
 {------------------------------------------------------------------------------}
@@ -164,6 +259,13 @@ begin
   
   // 1. TileOverlay - Background layer (world tiles)
   DrawTileOverlay;
+
+  // New visual intelligence overlays
+  DrawTileHeatmapOverlay;
+  DrawMovementVectorOverlay;
+  DrawSplashAuraOverlay;
+  DrawFreezeProjectionOverlay;
+  DrawTickPulseOverlay;
   
   // 2. HUDOverlay - Main HUD elements
   DrawHUDOverlay;
@@ -176,6 +278,15 @@ begin
   
   // 5. DebugOverlay - Debug info (topmost when enabled)
   DrawDebugOverlay;
+
+  // Simulation Overlay
+  DrawSimulationOverlay;
+
+  // Neural Overlay
+  DrawNeuralOverlay;
+
+  // Status HUD
+  DrawStatusHUD();
 end;
 
 {------------------------------------------------------------------------------}
@@ -191,6 +302,13 @@ begin
   
   // Update all core modules in order
   UpdateAllModules;
+
+  // Run Automation Layer
+  DoAutoPrayer;
+  DoAutoEat;
+  DoAutoFreeze;
+  DoAutoSpec;
+  DoAutoMovement;
   
   // Draw all overlays in order
   DrawAllOverlays;

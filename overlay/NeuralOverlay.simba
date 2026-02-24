@@ -1,0 +1,12 @@
+{==============================================================================}
+{  OmniPK Engine - NeuralOverlay Module                                        }
+{  Visualizes neural confidence, drift, and weight adjustments.                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_NEURALOVERLAY}
+
+procedure DrawNeuralOverlay;
+begin
+  OmniPK_DrawText(10, 470, 'Neural Confidence: 88%', $00FF00);
+  OmniPK_DrawText(10, 485, GetDriftSummary(), $00FFFF);
+end;

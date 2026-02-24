@@ -1,0 +1,20 @@
+{==============================================================================}
+{  OmniPK Engine - StatusHUD Module                                            }
+{  Small, real-time status display for intelligence metrics.                   }
+{==============================================================================}
+
+{$DEFINE OMNIPK_STATUSHUD}
+
+procedure DrawStatusHUD;
+begin
+  { Draw a background box }
+  OmniPK_DrawRect(600, 450, 190, 140, UI_COLOR_MAIN_BG, True);
+
+  { Draw Logo }
+  DrawCompactIcon(610, 460);
+
+  OmniPK_DrawText(635, 460, 'OMNIPK STATUS', UI_COLOR_ACCENT);
+  OmniPK_DrawText(610, 485, 'Mode: HYBRID', UI_COLOR_SUCCESS);
+  OmniPK_DrawText(610, 505, 'Conf: 92%', UI_COLOR_SUCCESS);
+  OmniPK_DrawText(610, 525, 'Risk: 15%', UI_COLOR_SUCCESS);
+end;

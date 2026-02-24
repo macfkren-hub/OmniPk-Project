@@ -1,0 +1,11 @@
+{==============================================================================}
+{  OmniPK Engine - ModeSelector Module                                         }
+{  UI for choosing Manual/Hybrid/Auto modes.                                   }
+{==============================================================================}
+
+{$DEFINE OMNIPK_MODESELECTOR}
+
+procedure ShowModeSelector;
+begin
+  OmniLog('ModeSelector: Opening mode selection panel...', DEBUG_LEVEL_INFO);
+end;

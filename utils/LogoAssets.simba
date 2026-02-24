@@ -1,0 +1,18 @@
+{==============================================================================}
+{  OmniPK Engine - LogoAssets Module                                           }
+{  Geometric definitions for the OmniPK logo and compact icon.                 }
+{==============================================================================}
+
+{$DEFINE OMNIPK_LOGOASSETS}
+
+procedure DrawOmniPKLogo(X, Y: Integer; Size: Integer);
+begin
+  { Draw a futuristic hexagonal logo with neural nodes }
+  OmniPK_DrawCircle(X, Y, Size, $00FFFF, False);
+  OmniPK_DrawCircle(X, Y, Size div 2, $FFFFFF, True);
+end;
+
+procedure DrawCompactIcon(X, Y: Integer);
+begin
+  OmniPK_DrawRect(X, Y, 16, 16, $00FFFF, True);
+end;

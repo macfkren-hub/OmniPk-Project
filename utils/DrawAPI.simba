@@ -26,6 +26,13 @@ begin
   {$ENDIF}
 end;
 
+procedure OmniPK_DrawCircle(X, Y, Radius: Integer; Color: Integer; Filled: Boolean);
+begin
+  {$IFDEF OMNIPK_USE_SRL}
+  { SMART_DrawCircle(GetCanvas, Point(X, Y), Radius, Color, Filled); }
+  {$ENDIF}
+end;
+
 procedure OmniPK_DrawRect(X, Y, W, H: Integer; Color: Integer; Filled: Boolean);
 begin
   OmniPK_DrawBox(X, Y, X+W, Y+H, Color);

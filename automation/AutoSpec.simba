@@ -1,0 +1,17 @@
+{==============================================================================}
+{  OmniPK Engine - AutoSpec Module                                             }
+{  Automatically uses special attacks during KO windows.                       }
+{==============================================================================}
+
+{$DEFINE OMNIPK_AUTOSPEC}
+
+procedure DoAutoSpec;
+begin
+  if not GetConfigBoolean('auto_spec_enabled', False) then Exit;
+
+  if IsKOWindowActive() and HasDesyncAdvantage() then
+  begin
+    OmniLog('AutoSpec: ACTIVATING SPECIAL ATTACK', DEBUG_LEVEL_INFO);
+    { Simulate spec }
+  end;
+end;

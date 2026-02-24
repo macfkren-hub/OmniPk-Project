@@ -1,0 +1,17 @@
+{==============================================================================}
+{  OmniPK Engine - AutoFreeze Module                                           }
+{  Automatically casts freeze spells when opponent is vulnerable.              }
+{==============================================================================}
+
+{$DEFINE OMNIPK_AUTOFREEZE}
+
+procedure DoAutoFreeze;
+begin
+  if not GetConfigBoolean('auto_freeze_enabled', False) then Exit;
+
+  if not IsOpponentFrozen() and (GetSplashProbability() < 0.3) then
+  begin
+    OmniLog('AutoFreeze: Casting freeze spell', DEBUG_LEVEL_INFO);
+    { Simulate casting }
+  end;
+end;

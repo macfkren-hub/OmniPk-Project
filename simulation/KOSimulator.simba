@@ -1,0 +1,20 @@
+{==============================================================================}
+{  OmniPK Engine - KOSimulator Module                                          }
+{  Predicts KO windows based on multi-tick simulation.                         }
+{==============================================================================}
+
+{$DEFINE OMNIPK_KOSIMULATOR}
+
+type
+  TKOSimResult = record
+    Probability: Double;
+    WindowStartTick: Integer;
+    WindowEndTick: Integer;
+  end;
+
+function RunKOSimulation: TKOSimResult;
+begin
+  Result.Probability := 0.45;
+  Result.WindowStartTick := GetCurrentTick() + 1;
+  Result.WindowEndTick := GetCurrentTick() + 3;
+end;

@@ -1,0 +1,39 @@
+{==============================================================================}
+{  OmniPK Engine - AnimationUtils Module                                       }
+{  Provides smooth transition and pulsing functions for overlays.              }
+{==============================================================================}
+
+{$DEFINE OMNIPK_ANIMATIONUTILS}
+
+function SmoothPulse(MinVal, MaxVal: Double; Speed: Double): Double;
+begin
+  Result := MinVal + (MaxVal - MinVal) * (0.5 + 0.5 * Sin(GetTimeRunning * Speed / 1000.0));
+end;
+
+function SmoothFade(StartAlpha, EndAlpha: Integer; Duration: Integer; StartTime: UInt64): Integer;
+var
+  Progress: Double;
+begin
+  Progress := (GetTimeRunning - StartTime) / Duration;
+  if Progress > 1.0 then Progress := 1.0;
+  Result := Round(StartAlpha + (EndAlpha - StartAlpha) * Progress);
+end;
+
+function SmoothColorShift(Color1, Color2: Integer; Progress: Double): Integer;
+var
+  R1, G1, B1, R2, G2, B2: Integer;
+begin
+  ColorToRGB(Color1, R1, G1, B1);
+  ColorToRGB(Color2, R2, G2, B2);
+  Result := RGBToColor(
+    Round(R1 + (R2 - R1) * Progress),
+    Round(G1 + (G2 - G1) * Progress),
+    Round(B1 + (B2 - B1) * Progress)
+  );
+end;
+
+function TickWaveform(TickProgress: Double): Double;
+begin
+  { Returns a value that peaks at the start of a tick and decays }
+  Result := Exp(-TickProgress * 5.0);
+end;

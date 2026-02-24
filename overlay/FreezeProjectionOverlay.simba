@@ -1,0 +1,27 @@
+{==============================================================================}
+{  OmniPK Engine - FreezeProjectionOverlay Module                              }
+{  Highlights tiles where the opponent can freeze you in the next tick.        }
+{==============================================================================}
+
+{$DEFINE OMNIPK_FREEZEPROJECTIONOVERLAY}
+
+procedure DrawFreezeProjectionOverlay;
+var
+  OpponentTile, MyTile: TPoint;
+  ProjTile: TPoint;
+  Dist: Double;
+begin
+  if not GetConfigBoolean('overlay_freezeprojection_enabled', True) then Exit;
+
+  OpponentTile := GetOpponentTile();
+  MyTile := GetPlayerTile();
+  Dist := Distance(OpponentTile.X, OpponentTile.Y, MyTile.X, MyTile.Y);
+
+  { If opponent is in range to freeze (usually 10 tiles for spells) }
+  if (Dist <= 10.0) and not IsPlayerFrozen then
+  begin
+    ProjTile := OmniPK_WorldToScreen(MyTile.X, MyTile.Y);
+    OmniPK_DrawBox(ProjTile.X - 10, ProjTile.Y - 10, ProjTile.X + 10, ProjTile.Y + 10, $00FFFF);
+    OmniPK_DrawText(ProjTile.X, ProjTile.Y - 20, 'FREEZE ZONE', $00FFFF);
+  end;
+end;

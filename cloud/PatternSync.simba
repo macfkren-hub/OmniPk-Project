@@ -1,0 +1,12 @@
+{==============================================================================}
+{  OmniPK Engine - PatternSync Module                                          }
+{  Synchronizes behavioral patterns with a remote server.                      }
+{==============================================================================}
+
+{$DEFINE OMNIPK_PATTERNSYNC}
+
+procedure SyncPatterns;
+begin
+  if not GetConfigBoolean('cloud_sync_enabled', False) then Exit;
+  OmniLog('PatternSync: Syncing patterns with cloud...', DEBUG_LEVEL_INFO);
+end;

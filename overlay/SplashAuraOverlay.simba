@@ -1,0 +1,26 @@
+{==============================================================================}
+{  OmniPK Engine - SplashAuraOverlay Module                                    }
+{  Circular aura around opponent indicating splash probability.                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_SPLASHAURAOVERLAY}
+
+procedure DrawSplashAuraOverlay;
+var
+  OpponentPos: TPoint;
+  SplashProb: Double;
+  AuraColor: Integer;
+  AuraRadius: Integer;
+begin
+  if not GetConfigBoolean('overlay_splashaura_enabled', True) then Exit;
+
+  OpponentPos := OmniPK_WorldToScreen(GetOpponentTile.X, GetOpponentTile.Y);
+  SplashProb := GetSplashProbability(); { 0.0 to 1.0 }
+
+  { Redder aura means higher splash chance }
+  AuraColor := SmoothColorShift($00FF00, $0000FF, SplashProb);
+  AuraRadius := 30;
+
+  OmniPK_DrawCircle(OpponentPos.X, OpponentPos.Y, AuraRadius, AuraColor, False);
+  OmniPK_DrawText(OpponentPos.X - 20, OpponentPos.Y + 35, Format('Splash: %d%%', [Round(SplashProb * 100)]), AuraColor);
+end;

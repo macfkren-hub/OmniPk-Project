@@ -1,0 +1,24 @@
+{==============================================================================}
+{  OmniPK Engine - AutoEat Module                                              }
+{  Automatically eats food and drinks potions based on KO risk.                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_AUTOEAT}
+
+procedure DoAutoEat;
+var
+  CurrHP: Integer;
+begin
+  if not GetConfigBoolean('auto_eat_enabled', False) then Exit;
+
+  if ShouldEatNow() then
+  begin
+    CurrHP := GetPlayerHP();
+    OmniLog(Format('AutoEat: HP is %d. Consuming food/potion.', [CurrHP]), DEBUG_LEVEL_INFO);
+    { TODO: Implement actual game interaction here }
+    { Example: Inventory.ClickItem(FOOD_IDS) }
+
+    { Simulate the effect of eating for internal logic }
+    SetPlayerHP(Min(99, CurrHP + 20));
+  end;
+end;

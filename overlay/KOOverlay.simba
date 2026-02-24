@@ -37,10 +37,18 @@ var
   ThreatLevel: TKOThreatLevel;
   ThreatColor: Integer;
   ThreatText, RiskText, EatText: String;
+  FlashAlpha: Double;
 begin
   Y := KO_TOP_Y;
   
   ThreatLevel := GetKOThreatLevel;
+
+  { Flash red border if critical threat }
+  if ThreatLevel = ktCritical then
+  begin
+     FlashAlpha := SmoothPulse(0.0, 1.0, 10.0);
+     OmniPK_DrawRect(0, 0, 800, 600, SmoothColorShift($000000, $0000FF, FlashAlpha), False);
+  end;
   ThreatColor := GetKOThreatColor(ThreatLevel);
   
   { Threat level - context-aware: only prominent when elevated }
