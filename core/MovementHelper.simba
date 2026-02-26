@@ -10,10 +10,10 @@
 
 type
   TTileSafety = (
-    tsSafe,       // Green - safe to stand
-    tsCaution,    // Yellow - potential danger
-    tsDanger,     // Red - dangerous tile
-    tsDeadly      // Purple - certain death zone
+    tsSafe,
+    tsCaution,
+    tsDanger,
+    tsDeadly
   );
 
   TTileInfo = record
@@ -34,15 +34,16 @@ type
     LastMoveAttemptTick: Integer;
     NextMoveTick: Integer;
     IsMovementLocked: Boolean;
+    StalledTicks: Integer;
+    LastConfirmedMoveTick: Integer;
+    ForcedMovementTick: Integer;
+    DesyncSensitiveUntilTick: Integer;
     IsInitialized: Boolean;
   end;
 
 var
   MovementHelperState: TMovementHelperState;
 
-{------------------------------------------------------------------------------}
-{ Tile weight constants - sync with tile_weights.json                          }
-{------------------------------------------------------------------------------}
 const
   BASE_SAFE = 1.0;
   MELEE_RANGE_PENALTY = -0.5;
@@ -58,9 +59,6 @@ const
   DANGER_SCORE = 0.2;
   SPELL_RANGE = 10;
 
-{------------------------------------------------------------------------------}
-{ ScoreToSafety - Convert weight score to safety level                         }
-{------------------------------------------------------------------------------}
 function ScoreToSafety(Score: Double): TTileSafety;
 begin
   if Score >= SAFE_SCORE then
@@ -73,17 +71,11 @@ begin
     Result := tsDeadly;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetRecommendedTile - Returns the best tile to move to                        }
-{------------------------------------------------------------------------------}
 function GetRecommendedTile: TPoint;
 begin
   Result := MovementHelperState.RecommendedTile;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsSafeTile - Returns true if the given tile is safe                          }
-{------------------------------------------------------------------------------}
 function IsSafeTile(Tile: TPoint): Boolean;
 var
   i: Integer;
@@ -100,9 +92,6 @@ begin
   end;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetTileSafety - Returns safety level of a tile                               }
-{------------------------------------------------------------------------------}
 function GetTileSafety(Tile: TPoint): TTileSafety;
 var
   i: Integer;
@@ -119,118 +108,211 @@ begin
   end;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetPlayerPosition - Returns current player position                          }
-{------------------------------------------------------------------------------}
 function GetPlayerPosition: TPoint;
 begin
   Result := MovementHelperState.PlayerPosition;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetOpponentPosition - Returns current opponent position                      }
-{------------------------------------------------------------------------------}
 function GetOpponentPosition: TPoint;
 begin
   Result := MovementHelperState.OpponentPosition;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetDistanceToOpponent - Returns tile distance to opponent                    }
-{------------------------------------------------------------------------------}
 function GetDistanceToOpponent: Integer;
 begin
-  Result := GetTileDistance(MovementHelperState.PlayerPosition, 
+  Result := GetTileDistance(MovementHelperState.PlayerPosition,
     MovementHelperState.OpponentPosition);
 end;
 
-{------------------------------------------------------------------------------}
-{ IsInMeleeRange - Returns true if player is in melee range of opponent        }
-{------------------------------------------------------------------------------}
 function IsInMeleeRange: Boolean;
 begin
   Result := GetDistanceToOpponent <= 1;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsMovementLocked - Returns true if movement is locked (frozen)               }
-{------------------------------------------------------------------------------}
 function IsMovementLocked: Boolean;
 begin
   Result := MovementHelperState.IsMovementLocked;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetLastMoveTick - Returns tick of last move attempt                          }
-{------------------------------------------------------------------------------}
 function GetLastMoveTick: Integer;
 begin
   Result := MovementHelperState.LastMoveAttemptTick;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetNextMoveTick - Returns when next move can occur                           }
-{------------------------------------------------------------------------------}
 function GetNextMoveTick: Integer;
 begin
   Result := MovementHelperState.NextMoveTick;
 end;
 
-{------------------------------------------------------------------------------}
-{ RecordMoveAttempt - Call when player attempts to move                        }
-{------------------------------------------------------------------------------}
+
+function GetMovementStalledTicks: Integer;
+begin
+  Result := MovementHelperState.StalledTicks;
+end;
+
+function WasForcedMovementThisTick: Boolean;
+begin
+  Result := MovementHelperState.ForcedMovementTick = GetCurrentTick;
+end;
+
+function IsInDesyncSensitiveWindow: Boolean;
+begin
+  Result := GetCurrentTick <= MovementHelperState.DesyncSensitiveUntilTick;
+end;
+
+function IsValidTile(Tile: TPoint): Boolean;
+begin
+  Result := (Tile.X >= 0) and (Tile.Y >= 0) and (Tile.X <= 9999) and (Tile.Y <= 9999);
+end;
+
+function IsTileOccupied(Tile: TPoint): Boolean;
+begin
+  Result := ((Tile.X = MovementHelperState.OpponentPosition.X) and
+            (Tile.Y = MovementHelperState.OpponentPosition.Y));
+end;
+
+function IsTileBlocked(Tile: TPoint): Boolean;
+begin
+  Result := (GetTileSafety(Tile) = tsDeadly) or IsTileOccupied(Tile) or (not IsValidTile(Tile));
+end;
+
+function CanStep(FromTile, ToTile: TPoint): Boolean;
+var
+  TickNow: Integer;
+begin
+  TickNow := GetCurrentTick;
+
+  if MovementHelperState.IsMovementLocked then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  if GetTileDistance(FromTile, ToTile) <> 1 then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  if IsTileBlocked(ToTile) then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  if TickNow < MovementHelperState.NextMoveTick then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  if TickNow <= MovementHelperState.DesyncSensitiveUntilTick then
+  begin
+    { allow only cardinal movement in desync-sensitive windows }
+    Result := ((Abs(ToTile.X - FromTile.X) + Abs(ToTile.Y - FromTile.Y)) = 1);
+    Exit;
+  end;
+
+  Result := True;
+end;
+
+function CalculateTileScore(Tile: TPoint; PlayerPos, OppPos: TPoint): Double; forward;
+
+function NextStep: TPoint;
+var
+  Adjacent: array of TPoint;
+  i: Integer;
+  BestScore, Score: Double;
+begin
+  Result := MovementHelperState.PlayerPosition;
+  BestScore := -999.0;
+
+  Adjacent := GetAdjacentTiles(MovementHelperState.PlayerPosition);
+  for i := 0 to High(Adjacent) do
+  begin
+    if not CanStep(MovementHelperState.PlayerPosition, Adjacent[i]) then
+      Continue;
+
+    Score := CalculateTileScore(Adjacent[i], MovementHelperState.PlayerPosition,
+      MovementHelperState.OpponentPosition);
+    if Score > BestScore then
+    begin
+      BestScore := Score;
+      Result := Adjacent[i];
+    end;
+  end;
+end;
+
+function PredictTiles(nTicks: Integer): array of TPoint;
+var
+  i: Integer;
+  Cur, Step: TPoint;
+begin
+  if nTicks < 0 then nTicks := 0;
+  SetLength(Result, nTicks + 1);
+
+  Cur := MovementHelperState.PlayerPosition;
+  Result[0] := Cur;
+
+  for i := 1 to nTicks do
+  begin
+    Step := Cur;
+    if not MovementHelperState.IsMovementLocked then
+    begin
+      if Cur.X < MovementHelperState.RecommendedTile.X then Inc(Step.X)
+      else if Cur.X > MovementHelperState.RecommendedTile.X then Dec(Step.X);
+
+      if Cur.Y < MovementHelperState.RecommendedTile.Y then Inc(Step.Y)
+      else if Cur.Y > MovementHelperState.RecommendedTile.Y then Dec(Step.Y);
+
+      if not CanStep(Cur, Step) then
+        Step := Cur;
+    end;
+
+    Cur := Step;
+    Result[i] := Cur;
+  end;
+end;
+
 procedure RecordMoveAttempt;
 begin
   MovementHelperState.LastMoveAttemptTick := GetCurrentTick;
   MovementHelperState.NextMoveTick := GetCurrentTick + 1;
 end;
 
-{------------------------------------------------------------------------------}
-{ CalculateTileScore - Calculate safety score for a tile                       }
-{------------------------------------------------------------------------------}
 function CalculateTileScore(Tile: TPoint; PlayerPos, OppPos: TPoint): Double;
 var
   DistToOpp: Integer;
   DistFromPlayer: Integer;
   Score: Double;
   DirAway: Boolean;
-  DX, DY: Integer;
 begin
   Score := BASE_SAFE;
   DistToOpp := GetTileDistance(Tile, OppPos);
   DistFromPlayer := GetTileDistance(Tile, PlayerPos);
-  
-  { Melee range penalty - tiles adjacent to opponent are dangerous }
+
   if DistToOpp <= 1 then
     Score := Score + MELEE_RANGE_PENALTY;
-  
-  { Spell range penalty - within mage range }
+
   if (DistToOpp > 1) and (DistToOpp <= SPELL_RANGE) then
     Score := Score + SPELL_RANGE_PENALTY;
-  
-  { Direction bonus: moving away from opponent is good }
-  DX := Tile.X - PlayerPos.X;
-  DY := Tile.Y - PlayerPos.Y;
+
   DirAway := (Abs(Tile.X - OppPos.X) > Abs(PlayerPos.X - OppPos.X)) or
              (Abs(Tile.Y - OppPos.Y) > Abs(PlayerPos.Y - OppPos.Y));
-  
+
   if DirAway and (DistFromPlayer > 0) then
     Score := Score + DIRECTION_AWAY_BONUS
   else if not DirAway and (DistFromPlayer > 0) then
     Score := Score + DIRECTION_TOWARD_PENALTY;
-  
-  { Optimal distance: not too close, not too far for kiting }
+
   if DistToOpp < OPTIMAL_MELEE_KITE_DIST then
     Score := Score + TOO_CLOSE_PENALTY
   else if DistToOpp > OPTIMAL_MAGE_DIST then
     Score := Score + TOO_FAR_PENALTY;
-  
+
   Result := Score;
 end;
 
-{------------------------------------------------------------------------------}
-{ FindBestTile - Find the best tile to move to from adjacent tiles             }
-{------------------------------------------------------------------------------}
 function FindBestTile(PlayerPos, OppPos: TPoint): TPoint;
 var
   Adjacent: array of TPoint;
@@ -240,11 +322,14 @@ var
 begin
   Result := PlayerPos;
   BestScore := -999.0;
-  
+
   Adjacent := GetAdjacentTiles(PlayerPos);
-  
+
   for i := 0 to High(Adjacent) do
   begin
+    if not CanStep(PlayerPos, Adjacent[i]) then
+      Continue;
+
     Score := CalculateTileScore(Adjacent[i], PlayerPos, OppPos);
     if Score > BestScore then
     begin
@@ -254,9 +339,6 @@ begin
   end;
 end;
 
-{------------------------------------------------------------------------------}
-{ InitMovementHelper - Initialize the movement helper system                   }
-{------------------------------------------------------------------------------}
 procedure InitMovementHelper;
 begin
   MovementHelperState.PlayerPosition := Point(0, 0);
@@ -266,14 +348,15 @@ begin
   MovementHelperState.LastMoveAttemptTick := 0;
   MovementHelperState.NextMoveTick := 0;
   MovementHelperState.IsMovementLocked := False;
+  MovementHelperState.StalledTicks := 0;
+  MovementHelperState.LastConfirmedMoveTick := -9999;
+  MovementHelperState.ForcedMovementTick := -9999;
+  MovementHelperState.DesyncSensitiveUntilTick := -9999;
   MovementHelperState.IsInitialized := True;
-  
+
   WriteLn('[MovementHelper] Initialized');
 end;
 
-{------------------------------------------------------------------------------}
-{ UpdateMovementHelper - Update movement analysis (call every frame)           }
-{------------------------------------------------------------------------------}
 procedure UpdateMovementHelper;
 var
   PlayerPos, OppPos: TPoint;
@@ -281,56 +364,65 @@ var
   i: Integer;
   Info: TTileInfo;
   CurrentTick: Integer;
+  PrevPos: TPoint;
 begin
   if not MovementHelperState.IsInitialized then
     Exit;
-  
+
   CurrentTick := GetCurrentTick;
-  
-  { Get positions from game }
+  PrevPos := MovementHelperState.PlayerPosition;
+
   PlayerPos := GetMyTile;
   OppPos := GetOpponentTile;
-  
+
   MovementHelperState.PlayerPosition := PlayerPos;
   MovementHelperState.OpponentPosition := OppPos;
-  
-  { Movement locked when frozen }
+
   MovementHelperState.IsMovementLocked := IsPlayerFrozen;
-  
-  { Update next move tick based on last attempt }
+
   if MovementHelperState.LastMoveAttemptTick > 0 then
     MovementHelperState.NextMoveTick := MovementHelperState.LastMoveAttemptTick + 1;
-  
-  { Build nearby tiles list: player tile + adjacent + tiles in 2 tile radius }
+
+  if (PlayerPos.X = PrevPos.X) and (PlayerPos.Y = PrevPos.Y) then
+    Inc(MovementHelperState.StalledTicks)
+  else
+  begin
+    MovementHelperState.StalledTicks := 0;
+    MovementHelperState.LastConfirmedMoveTick := CurrentTick;
+  end;
+
+  if (GetTickOffset < 0) and (GetDesyncConfidence > 0.5) then
+    MovementHelperState.DesyncSensitiveUntilTick := CurrentTick + 2;
+
+  if (MovementHelperState.StalledTicks >= 2) and (not MovementHelperState.IsMovementLocked) then
+    MovementHelperState.ForcedMovementTick := CurrentTick;
+
   Adjacent := GetAdjacentTiles(PlayerPos);
   SetLength(MovementHelperState.NearbyTiles, Length(Adjacent) + 1);
-  
-  { Add current tile }
+
   Info.Position := PlayerPos;
   Info.DistanceToOpponent := GetTileDistance(PlayerPos, OppPos);
   Info.IsInMeleeRange := Info.DistanceToOpponent <= 1;
   Info.IsInSpellRange := Info.DistanceToOpponent <= SPELL_RANGE;
-  Info.IsBlocked := False;
+  Info.IsBlocked := IsTileBlocked(PlayerPos);
   Info.Weight := CalculateTileScore(PlayerPos, PlayerPos, OppPos);
   Info.Safety := ScoreToSafety(Info.Weight);
   MovementHelperState.NearbyTiles[0] := Info;
-  
-  { Add adjacent tiles }
+
   for i := 0 to High(Adjacent) do
   begin
     Info.Position := Adjacent[i];
     Info.DistanceToOpponent := GetTileDistance(Adjacent[i], OppPos);
     Info.IsInMeleeRange := Info.DistanceToOpponent <= 1;
     Info.IsInSpellRange := Info.DistanceToOpponent <= SPELL_RANGE;
-    Info.IsBlocked := False;
+    Info.IsBlocked := IsTileBlocked(Adjacent[i]) or (not CanStep(PlayerPos, Adjacent[i]));
     Info.Weight := CalculateTileScore(Adjacent[i], PlayerPos, OppPos);
     Info.Safety := ScoreToSafety(Info.Weight);
     MovementHelperState.NearbyTiles[i + 1] := Info;
   end;
-  
-  { Calculate recommended tile - only if not frozen }
+
   if not MovementHelperState.IsMovementLocked then
-    MovementHelperState.RecommendedTile := FindBestTile(PlayerPos, OppPos)
+    MovementHelperState.RecommendedTile := NextStep
   else
     MovementHelperState.RecommendedTile := PlayerPos;
 end;

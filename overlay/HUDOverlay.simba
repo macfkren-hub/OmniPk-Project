@@ -7,11 +7,11 @@
 {$DEFINE OMNIPK_HUDOVERLAY}
 
 const
-  COLOR_NEON_CYAN    = $FFFF00;
+  COLOR_NEON_CYAN       = $FFFF00;
   COLOR_ELECTRIC_PURPLE = $F020A0;
-  COLOR_DANGER_RED   = $4444FF;
-  COLOR_LIME_GREEN   = $00FF00;
-  COLOR_SOFT_WHITE   = $FFFFFF;
+  COLOR_DANGER_RED      = $4444FF;
+  COLOR_LIME_GREEN      = $00FF00;
+  COLOR_SOFT_WHITE      = $FFFFFF;
 
 const
   HUD_LEFT_X = 10;
@@ -24,30 +24,27 @@ var
   TickText, FreezeText, DesyncText, CooldownText: String;
 begin
   Y := HUD_TOP_Y;
-  
-  { Tick counter }
+
   TickText := Format('Tick: %d', [GetCurrentTick]);
   OmniPK_DrawText(HUD_LEFT_X, Y, TickText, COLOR_NEON_CYAN);
   Y := Y + HUD_LINE_HEIGHT;
-  
-  { Freeze status - context-aware: only show when frozen }
+
   if IsPlayerFrozen then
-  begin
-    FreezeText := Format('FROZEN: %d', [GetPlayerFreezeTicksRemaining]);
-    OmniPK_DrawText(HUD_LEFT_X, Y, FreezeText, COLOR_NEON_CYAN);
-  end
+    FreezeText := Format('FROZEN: %d', [GetPlayerFreezeTicksRemaining])
+  else if WasRecentlyFrozen then
+    FreezeText := 'RECENT FREEZE'
   else
-    OmniPK_DrawText(HUD_LEFT_X, Y, 'Free: OK', COLOR_LIME_GREEN);
+    FreezeText := 'Free: OK';
+  OmniPK_DrawText(HUD_LEFT_X, Y, FreezeText, COLOR_NEON_CYAN);
   Y := Y + HUD_LINE_HEIGHT;
-  
-  { Desync indicator }
+
   if HasDesyncAdvantage then
     DesyncText := Format('DESYNC: +%d', [GetTickOffset])
   else if GetTickOffset < 0 then
     DesyncText := Format('DESYNC: %d', [GetTickOffset])
   else
     DesyncText := 'SYNC';
-  
+
   if HasDesyncAdvantage then
     OmniPK_DrawText(HUD_LEFT_X, Y, DesyncText, COLOR_LIME_GREEN)
   else if GetTickOffset < 0 then
@@ -55,15 +52,20 @@ begin
   else
     OmniPK_DrawText(HUD_LEFT_X, Y, DesyncText, COLOR_SOFT_WHITE);
   Y := Y + HUD_LINE_HEIGHT;
-  
-  { Attack cooldown }
+
   if IsOpponentAttackReady then
-  begin
-    OmniPK_DrawText(HUD_LEFT_X, Y, 'ATTACK READY!', COLOR_DANGER_RED);
-  end
+    CooldownText := 'ATTACK READY!'
   else
-  begin
     CooldownText := Format('In: %d', [GetAttackCooldownRemaining]);
-    OmniPK_DrawText(HUD_LEFT_X, Y, CooldownText, COLOR_SOFT_WHITE);
-  end;
+  OmniPK_DrawText(HUD_LEFT_X, Y, CooldownText, COLOR_SOFT_WHITE);
+  Y := Y + HUD_LINE_HEIGHT;
+
+  OmniPK_DrawText(HUD_LEFT_X, Y,
+    Format('StyleConf: %.2f Next:%d', [GetStyleInferenceConfidence, Ord(GetLikelyNextStyle)]),
+    COLOR_ELECTRIC_PURPLE);
+  Y := Y + HUD_LINE_HEIGHT;
+
+  OmniPK_DrawText(HUD_LEFT_X, Y,
+    Format('KO:%s Risk:%.0f%%', [BoolToStr(IsKOWindowActive), GetKORiskScore * 100]),
+    GetThreatColor(GetKORiskScore));
 end;

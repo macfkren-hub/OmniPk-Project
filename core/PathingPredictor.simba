@@ -30,11 +30,74 @@ type
     LastOpponentTile: TPoint;
     PredictedNextTile: TPoint;
     PredictedIntent: TPathingIntent;
+    EscapeVectorScore: Double;
     IsInitialized: Boolean;
   end;
 
 var
   PathingPredictorState: TPathingPredictorState;
+
+const
+  PATH_PROJECTION_TICKS = 5;
+
+{------------------------------------------------------------------------------}
+{ GetEscapeVectorScore - Returns score for opponent escape trajectory          }
+{------------------------------------------------------------------------------}
+function GetEscapeVectorScore: Double;
+begin
+  Result := PathingPredictorState.EscapeVectorScore;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsPathTileValid - Prevent projection through unsafe/blocked tiles            }
+{------------------------------------------------------------------------------}
+function IsPathTileValid(Tile: TPoint): Boolean;
+begin
+  { We treat deadly tiles as blocked pathing lanes for deterministic modeling. }
+  Result := GetTileSafety(Tile) <> tsDeadly;
+end;
+
+{------------------------------------------------------------------------------}
+{ ScoreEscapeVector - Score if projected path increases separation/safety      }
+{------------------------------------------------------------------------------}
+function ScoreEscapeVector(const Tiles: array of TPoint): Double;
+var
+  i: Integer;
+  PlayerPos: TPoint;
+  DistPrev, DistNow: Integer;
+  DistGain: Double;
+  SafetyBonus: Double;
+begin
+  Result := 0.0;
+  if Length(Tiles) < 2 then Exit;
+
+  PlayerPos := GetPlayerPosition;
+  DistGain := 0.0;
+  SafetyBonus := 0.0;
+
+  DistPrev := Max(Abs(Tiles[0].X - PlayerPos.X), Abs(Tiles[0].Y - PlayerPos.Y));
+  for i := 1 to High(Tiles) do
+  begin
+    DistNow := Max(Abs(Tiles[i].X - PlayerPos.X), Abs(Tiles[i].Y - PlayerPos.Y));
+    if DistNow > DistPrev then
+      DistGain := DistGain + 1.0
+    else if DistNow < DistPrev then
+      DistGain := DistGain - 0.75;
+
+    if GetTileSafety(Tiles[i]) = tsSafe then
+      SafetyBonus := SafetyBonus + 0.25
+    else if GetTileSafety(Tiles[i]) = tsCaution then
+      SafetyBonus := SafetyBonus + 0.1
+    else if GetTileSafety(Tiles[i]) = tsDanger then
+      SafetyBonus := SafetyBonus - 0.2;
+
+    DistPrev := DistNow;
+  end;
+
+  Result := (DistGain * 0.7 + SafetyBonus * 0.3) / High(Tiles);
+  if Result < -1.0 then Result := -1.0;
+  if Result > 1.0 then Result := 1.0;
+end;
 
 {------------------------------------------------------------------------------}
 { GetPredictedNextTile - Returns predicted next opponent tile                  }
@@ -221,6 +284,7 @@ begin
   PathingPredictorState.LastOpponentTile := Point(0, 0);
   PathingPredictorState.PredictedNextTile := Point(0, 0);
   PathingPredictorState.PredictedIntent := piUnknown;
+  PathingPredictorState.EscapeVectorScore := 0.0;
   PathingPredictorState.IsInitialized := True;
   
   WriteLn('[PathingPredictor] Initialized');
@@ -233,6 +297,9 @@ procedure UpdatePathingPredictor;
 var
   CurrentOpponentPos: TPoint;
   Velocity: TPoint;
+  i: Integer;
+  NextTile, LastProjected: TPoint;
+  TickNow: Integer;
 begin
   if not PathingPredictorState.IsInitialized then
     Exit;
@@ -255,6 +322,8 @@ begin
     PathingPredictorState.PredictedIntent := piStationary;
   end;
   
+  TickNow := GetCurrentTick;
+
   { Predict next tile - opponent frozen = no movement }
   if IsOpponentFrozen then
   begin
@@ -262,6 +331,9 @@ begin
     PathingPredictorState.PredictedPath.Confidence := 1.0;
     PathingPredictorState.PredictedIntent := piStationary;
     PathingPredictorState.OpponentVelocity := Point(0, 0);
+    SetLength(PathingPredictorState.PredictedPath.Tiles, 1);
+    PathingPredictorState.PredictedPath.Tiles[0] := CurrentOpponentPos;
+    PathingPredictorState.EscapeVectorScore := 0.0;
     Exit;
   end;
   
@@ -270,19 +342,51 @@ begin
   PathingPredictorState.PredictedNextTile.X := CurrentOpponentPos.X + Velocity.X;
   PathingPredictorState.PredictedNextTile.Y := CurrentOpponentPos.Y + Velocity.Y;
   
-  { Build predicted path (next 3 tiles for pathing trap detection) }
-  SetLength(PathingPredictorState.PredictedPath.Tiles, 3);
+  { Build projected path (next N ticks) with obstacle constraints }
+  SetLength(PathingPredictorState.PredictedPath.Tiles, PATH_PROJECTION_TICKS + 1);
   PathingPredictorState.PredictedPath.Tiles[0] := CurrentOpponentPos;
-  PathingPredictorState.PredictedPath.Tiles[1] := PathingPredictorState.PredictedNextTile;
-  PathingPredictorState.PredictedPath.Tiles[2].X := PathingPredictorState.PredictedNextTile.X + Velocity.X;
-  PathingPredictorState.PredictedPath.Tiles[2].Y := PathingPredictorState.PredictedNextTile.Y + Velocity.Y;
+  LastProjected := CurrentOpponentPos;
+  for i := 1 to PATH_PROJECTION_TICKS do
+  begin
+    NextTile.X := LastProjected.X + Velocity.X;
+    NextTile.Y := LastProjected.Y + Velocity.Y;
+
+    { Hard cap to one tile step per tick projection for determinism }
+    if NextTile.X > LastProjected.X + 1 then NextTile.X := LastProjected.X + 1;
+    if NextTile.X < LastProjected.X - 1 then NextTile.X := LastProjected.X - 1;
+    if NextTile.Y > LastProjected.Y + 1 then NextTile.Y := LastProjected.Y + 1;
+    if NextTile.Y < LastProjected.Y - 1 then NextTile.Y := LastProjected.Y - 1;
+
+    { If unsafe path appears, freeze projection at prior tile }
+    if not IsPathTileValid(NextTile) then
+      NextTile := LastProjected;
+
+    { Deterministic tick gate to avoid over-projecting stale vectors }
+    if (Length(PathingPredictorState.HistoryTickStamps) > 0) and
+       ((TickNow - PathingPredictorState.HistoryTickStamps[
+         High(PathingPredictorState.HistoryTickStamps)]) > 2) then
+      NextTile := LastProjected;
+
+    PathingPredictorState.PredictedPath.Tiles[i] := NextTile;
+    LastProjected := NextTile;
+  end;
+
+  PathingPredictorState.PredictedNextTile := PathingPredictorState.PredictedPath.Tiles[1];
   PathingPredictorState.PredictedPath.Intent := PathingPredictorState.PredictedIntent;
+  PathingPredictorState.EscapeVectorScore :=
+    ScoreEscapeVector(PathingPredictorState.PredictedPath.Tiles);
   
   { Confidence: more history = higher, consistent direction = higher }
   if Length(PathingPredictorState.OpponentPositionHistory) >= 5 then
-    PathingPredictorState.PredictedPath.Confidence := 0.7
+    PathingPredictorState.PredictedPath.Confidence := 0.65
   else if Length(PathingPredictorState.OpponentPositionHistory) >= 2 then
-    PathingPredictorState.PredictedPath.Confidence := 0.5
+    PathingPredictorState.PredictedPath.Confidence := 0.45
   else
     PathingPredictorState.PredictedPath.Confidence := 0.2;
+
+  PathingPredictorState.PredictedPath.Confidence :=
+    PathingPredictorState.PredictedPath.Confidence +
+    Abs(PathingPredictorState.EscapeVectorScore) * 0.2;
+  if PathingPredictorState.PredictedPath.Confidence > 1.0 then
+    PathingPredictorState.PredictedPath.Confidence := 1.0;
 end;
