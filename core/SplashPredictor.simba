@@ -1,6 +1,6 @@
 {==============================================================================}
 {  OmniPK Engine - SplashPredictor Module                                      }
-{  Predicts spell splash probability based on distance, movement, freeze.      }
+{  Predicts spell splash probability with stats, context, and immunity states. }
 {  NO DRAWING - Logic only.                                                    }
 {  Uses: MovementHelper, FreezeDetection, PathingPredictor, TickTracker        }
 {==============================================================================}
@@ -20,6 +20,9 @@ type
     PlayerMagicBonus: Integer;
     OpponentMagicDefense: Integer;
     OpponentMagicLevel: Integer;
+    OpponentDefenseLevel: Integer;
+    OpponentMagicPrayerActive: Boolean;
+    LastOpponentImmuneTick: Integer;
     SplashHistory: array of Boolean;
     CurrentPrediction: TSplashPrediction;
     AverageSplashRate: Double;
@@ -36,50 +39,34 @@ const
   DIAGONAL_PENALTY = 0.05;
   MOVEMENT_TICK_BONUS = 0.15;
   FREEZE_BONUS = -0.1;
+  MAGIC_PRAYER_SPLASH_BONUS = 0.08;
+  IMMUNITY_SPLASH_BONUS = 0.25;
 
-{------------------------------------------------------------------------------}
-{ GetSplashProbability - Returns probability of splash (0.0-1.0)               }
-{------------------------------------------------------------------------------}
 function GetSplashProbability: Double;
 begin
   Result := SplashPredictorState.CurrentPrediction.SplashProbability;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetSplashChance - Alias for GetSplashProbability                             }
-{------------------------------------------------------------------------------}
 function GetSplashChance: Double;
 begin
   Result := GetSplashProbability;
 end;
 
-{------------------------------------------------------------------------------}
-{ WillLikelySplash - Returns true if splash is likely                          }
-{------------------------------------------------------------------------------}
 function WillLikelySplash: Boolean;
 begin
   Result := SplashPredictorState.CurrentPrediction.SplashProbability > 0.5;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetAverageSplashRate - Returns historical splash rate                        }
-{------------------------------------------------------------------------------}
 function GetAverageSplashRate: Double;
 begin
   Result := SplashPredictorState.AverageSplashRate;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetPredictedDamage - Returns predicted damage if spell lands                 }
-{------------------------------------------------------------------------------}
 function GetPredictedDamage: Integer;
 begin
   Result := SplashPredictorState.CurrentPrediction.PredictedDamage;
 end;
 
-{------------------------------------------------------------------------------}
-{ RecordSplashResult - Record a splash/hit result                              }
-{------------------------------------------------------------------------------}
 procedure RecordSplashResult(DidSplash: Boolean);
 var
   Len, SplashCount, i: Integer;
@@ -94,43 +81,39 @@ begin
   end;
   SetLength(SplashPredictorState.SplashHistory, Len + 1);
   SplashPredictorState.SplashHistory[Len] := DidSplash;
-  
+
   SplashCount := 0;
   for i := 0 to High(SplashPredictorState.SplashHistory) do
     if SplashPredictorState.SplashHistory[i] then Inc(SplashCount);
-  
+
   if Length(SplashPredictorState.SplashHistory) > 0 then
-    SplashPredictorState.AverageSplashRate := 
+    SplashPredictorState.AverageSplashRate :=
       SplashCount / Length(SplashPredictorState.SplashHistory)
   else
     SplashPredictorState.AverageSplashRate := 0.5;
 end;
 
-{------------------------------------------------------------------------------}
-{ CalculateMagicAccuracy - Base accuracy from stats                            }
-{------------------------------------------------------------------------------}
 function CalculateMagicAccuracy: Double;
 var
   AttackRoll, DefenseRoll, Accuracy: Double;
 begin
-  AttackRoll := SplashPredictorState.PlayerMagicLevel * 
+  AttackRoll := (SplashPredictorState.PlayerMagicLevel + 8) *
     (SplashPredictorState.PlayerMagicBonus + 64);
-  DefenseRoll := SplashPredictorState.OpponentMagicLevel * 
+
+  DefenseRoll := ((SplashPredictorState.OpponentMagicLevel * 0.7) +
+    (SplashPredictorState.OpponentDefenseLevel * 0.3) + 8) *
     (SplashPredictorState.OpponentMagicDefense + 64);
-  
+
   if AttackRoll > DefenseRoll then
     Accuracy := 1.0 - (DefenseRoll + 2) / (2 * (AttackRoll + 1))
   else
     Accuracy := AttackRoll / (2 * (DefenseRoll + 1));
-  
+
   if Accuracy < 0.0 then Accuracy := 0.0;
   if Accuracy > 1.0 then Accuracy := 1.0;
   Result := Accuracy;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsDiagonalToTarget - Check if attack is diagonal                             }
-{------------------------------------------------------------------------------}
 function IsDiagonalToTarget: Boolean;
 var
   PlayerPos, OppPos: TPoint;
@@ -143,12 +126,8 @@ begin
   Result := (DX > 0) and (DY > 0);
 end;
 
-{------------------------------------------------------------------------------}
-{ GetMovementModifier - Bonus splash if opponent just moved                    }
-{------------------------------------------------------------------------------}
 function GetMovementModifier: Double;
 var
-  TicksSinceMove: Integer;
   OppDest: TPoint;
   OppPos: TPoint;
 begin
@@ -156,18 +135,44 @@ begin
   OppPos := GetOpponentPosition;
   OppDest := GetOpponentDestination;
   if (OppDest.X <> OppPos.X) or (OppDest.Y <> OppPos.Y) then
+  begin
     Result := MOVEMENT_TICK_BONUS;
+    SplashPredictorState.LastMovementTick := GetCurrentTick;
+  end
+  else if (GetCurrentTick - SplashPredictorState.LastMovementTick) <= 1 then
+    Result := MOVEMENT_TICK_BONUS * 0.5;
 end;
 
-{------------------------------------------------------------------------------}
-{ InitSplashPredictor - Initialize the splash predictor system                 }
-{------------------------------------------------------------------------------}
+function GetContextModifier: Double;
+var
+  Ctx: Double;
+begin
+  Ctx := 0.0;
+
+  if SplashPredictorState.OpponentMagicPrayerActive then
+    Ctx := Ctx + MAGIC_PRAYER_SPLASH_BONUS;
+
+  if (GetCurrentTick - SplashPredictorState.LastOpponentImmuneTick) <= 8 then
+    Ctx := Ctx + IMMUNITY_SPLASH_BONUS;
+
+  if IsOpponentFrozen then
+    Ctx := Ctx + FREEZE_BONUS;
+
+  if GetDesyncDirection = ddBehind then
+    Ctx := Ctx + 0.04;
+
+  Result := Ctx;
+end;
+
 procedure InitSplashPredictor;
 begin
   SplashPredictorState.PlayerMagicLevel := 99;
   SplashPredictorState.PlayerMagicBonus := 0;
   SplashPredictorState.OpponentMagicDefense := 0;
   SplashPredictorState.OpponentMagicLevel := 99;
+  SplashPredictorState.OpponentDefenseLevel := 99;
+  SplashPredictorState.OpponentMagicPrayerActive := False;
+  SplashPredictorState.LastOpponentImmuneTick := -999;
   SetLength(SplashPredictorState.SplashHistory, 0);
   SplashPredictorState.CurrentPrediction.WillSplash := False;
   SplashPredictorState.CurrentPrediction.SplashProbability := 0.5;
@@ -176,56 +181,53 @@ begin
   SplashPredictorState.AverageSplashRate := 0.5;
   SplashPredictorState.LastMovementTick := 0;
   SplashPredictorState.IsInitialized := True;
-  
+
   WriteLn('[SplashPredictor] Initialized');
 end;
 
-{------------------------------------------------------------------------------}
-{ UpdateSplashPredictor - Update splash prediction (call every frame)          }
-{------------------------------------------------------------------------------}
 procedure UpdateSplashPredictor;
 var
   BaseAccuracy, SplashProb: Double;
   Distance: Integer;
   Modifier: Double;
+  OppStyle: TAttackStyle;
 begin
   if not SplashPredictorState.IsInitialized then Exit;
-  
+
+  { Context from combat style/prayer readouts remains deterministic by tick. }
+  OppStyle := GetOpponentAttackStyle;
+  SplashPredictorState.OpponentMagicPrayerActive := IsPrayerMismatch and (OppStyle = asMagic);
+
+  if DidOpponentEatThisTick and (GetOpponentHPPercent > 0.85) then
+    SplashPredictorState.LastOpponentImmuneTick := GetCurrentTick;
+
   BaseAccuracy := CalculateMagicAccuracy;
   SplashProb := 1.0 - BaseAccuracy;
-  
-  { Distance modifier: farther = more splash }
+
   Distance := GetDistanceToOpponent;
   if Distance > 1 then
     Modifier := (Distance - 1) * DISTANCE_PENALTY_PER_TILE
   else
     Modifier := 0.0;
   SplashProb := SplashProb + Modifier;
-  
-  { Diagonal modifier: diagonal attacks slightly harder }
+
   if IsDiagonalToTarget then
     SplashProb := SplashProb + DIAGONAL_PENALTY;
-  
-  { Movement modifier: moving target harder to hit }
-  Modifier := GetMovementModifier;
-  SplashProb := SplashProb + Modifier;
-  
-  { Freeze modifier: frozen target easier to hit }
-  if IsOpponentFrozen then
-    SplashProb := SplashProb + FREEZE_BONUS;
-  
+
+  SplashProb := SplashProb + GetMovementModifier;
+  SplashProb := SplashProb + GetContextModifier;
+
   if SplashProb < 0.0 then SplashProb := 0.0;
   if SplashProb > 1.0 then SplashProb := 1.0;
-  
+
   SplashPredictorState.CurrentPrediction.SplashProbability := SplashProb;
   SplashPredictorState.CurrentPrediction.WillSplash := SplashProb > 0.5;
-  
-  { Blend with historical average if we have data }
+
   if Length(SplashPredictorState.SplashHistory) >= 10 then
   begin
-    SplashPredictorState.CurrentPrediction.SplashProbability := 
-      SplashProb * 0.6 + SplashPredictorState.AverageSplashRate * 0.4;
-    SplashPredictorState.CurrentPrediction.WillSplash := 
+    SplashPredictorState.CurrentPrediction.SplashProbability :=
+      SplashProb * 0.7 + SplashPredictorState.AverageSplashRate * 0.3;
+    SplashPredictorState.CurrentPrediction.WillSplash :=
       SplashPredictorState.CurrentPrediction.SplashProbability > 0.5;
   end;
 end;

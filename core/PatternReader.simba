@@ -13,6 +13,9 @@ const
   PATTERN_MEMORY_PATH = 'data/pattern_memory.json';
   MAX_EAT_HISTORY = 50;
   MAX_ATTACK_HISTORY = 100;
+  ROLLING_INTERVAL_WINDOW = 8;
+  ROLLING_SWITCH_WINDOW = 12;
+  MAX_KO_MARKERS = 24;
   STYLE_UNKNOWN = -1;
 
 type
@@ -38,6 +41,12 @@ type
     PanicThreshold: Integer;
     PredictedNextStyle: TAttackStyle;
     StyleSwitchProbability: Double;
+    NextActionConfidence: Double;
+    RollingAverageAttackInterval: Double;
+    RollingSwitchFrequency: Double;
+    RollingAttackIntervals: array of Integer;
+    RollingSwitches: array of Boolean;
+    KOPatternMarkers: array of Integer;
     TotalObservations: Integer;
     LastEatDetectedTick: Integer;
     LastRecordedAttackTick: Integer;
@@ -105,6 +114,74 @@ begin
 end;
 
 {------------------------------------------------------------------------------}
+{ GetNextActionPredictionConfidence - Returns confidence in next style         }
+{------------------------------------------------------------------------------}
+function GetNextActionPredictionConfidence: Double;
+begin
+  Result := PatternReaderState.NextActionConfidence;
+end;
+
+{------------------------------------------------------------------------------}
+{ PushRollingInterval - Add attack interval to rolling window                 }
+{------------------------------------------------------------------------------}
+procedure PushRollingInterval(IntervalTicks: Integer);
+var
+  Len: Integer;
+begin
+  Len := Length(PatternReaderState.RollingAttackIntervals);
+  if Len >= ROLLING_INTERVAL_WINDOW then
+  begin
+    Move(PatternReaderState.RollingAttackIntervals[1],
+         PatternReaderState.RollingAttackIntervals[0],
+         (Len - 1) * SizeOf(Integer));
+    Len := ROLLING_INTERVAL_WINDOW - 1;
+  end;
+
+  SetLength(PatternReaderState.RollingAttackIntervals, Len + 1);
+  PatternReaderState.RollingAttackIntervals[Len] := IntervalTicks;
+end;
+
+{------------------------------------------------------------------------------}
+{ PushRollingSwitch - Add switch boolean to rolling window                    }
+{------------------------------------------------------------------------------}
+procedure PushRollingSwitch(DidSwitch: Boolean);
+var
+  Len: Integer;
+begin
+  Len := Length(PatternReaderState.RollingSwitches);
+  if Len >= ROLLING_SWITCH_WINDOW then
+  begin
+    Move(PatternReaderState.RollingSwitches[1],
+         PatternReaderState.RollingSwitches[0],
+         (Len - 1) * SizeOf(Boolean));
+    Len := ROLLING_SWITCH_WINDOW - 1;
+  end;
+
+  SetLength(PatternReaderState.RollingSwitches, Len + 1);
+  PatternReaderState.RollingSwitches[Len] := DidSwitch;
+end;
+
+{------------------------------------------------------------------------------}
+{ RecordKOPatternMarker - Mark aggressive KO-like sequence timing             }
+{------------------------------------------------------------------------------}
+procedure RecordKOPatternMarker(MarkerTick: Integer);
+var
+  Len: Integer;
+begin
+  Len := Length(PatternReaderState.KOPatternMarkers);
+  if Len >= MAX_KO_MARKERS then
+  begin
+    Move(PatternReaderState.KOPatternMarkers[1],
+         PatternReaderState.KOPatternMarkers[0],
+         (Len - 1) * SizeOf(Integer));
+    Len := MAX_KO_MARKERS - 1;
+  end;
+
+  SetLength(PatternReaderState.KOPatternMarkers, Len + 1);
+  PatternReaderState.KOPatternMarkers[Len] := MarkerTick;
+end;
+
+{------------------------------------------------------------------------------}
 { RecordEatEvent - Record an observed eat event                                }
 {------------------------------------------------------------------------------}
 procedure RecordEatEvent(HP: Integer; FoodType: String);
@@ -153,6 +230,14 @@ begin
     PatternReaderState.AttackHistory[Len - 1].FollowUpStyle := Style;
     PatternReaderState.AttackHistory[Len - 1].TickDelay :=
       CurrentTick - PatternReaderState.AttackHistory[Len - 1].AttackTick;
+    if PatternReaderState.AttackHistory[Len - 1].TickDelay > 0 then
+      PushRollingInterval(PatternReaderState.AttackHistory[Len - 1].TickDelay);
+
+    PushRollingSwitch(PatternReaderState.AttackHistory[Len - 1].Style <> Style);
+
+    if (PatternReaderState.AttackHistory[Len - 1].Style <> Style) and
+       (PatternReaderState.AttackHistory[Len - 1].TickDelay <= 2) then
+      RecordKOPatternMarker(CurrentTick);
   end;
   
   if Len >= MAX_ATTACK_HISTORY then
@@ -258,6 +343,12 @@ begin
   PatternReaderState.PanicThreshold := 30;
   PatternReaderState.PredictedNextStyle := asUnknown;
   PatternReaderState.StyleSwitchProbability := 0.5;
+  PatternReaderState.NextActionConfidence := 0.25;
+  PatternReaderState.RollingAverageAttackInterval := 4.0;
+  PatternReaderState.RollingSwitchFrequency := 0.5;
+  SetLength(PatternReaderState.RollingAttackIntervals, 0);
+  SetLength(PatternReaderState.RollingSwitches, 0);
+  SetLength(PatternReaderState.KOPatternMarkers, 0);
   PatternReaderState.TotalObservations := 0;
   PatternReaderState.LastEatDetectedTick := -99;
   PatternReaderState.LastRecordedAttackTick := -1;
@@ -279,6 +370,9 @@ var
   MaxCount: Integer;
   OpponentStyle: TAttackStyle;
   CurrentTick: Integer;
+  TransitionCount: Integer;
+  SwitchCount: Integer;
+  IntervalTotal: Integer;
 begin
   if not PatternReaderState.IsInitialized then Exit;
   
@@ -317,11 +411,15 @@ begin
   
   { Calculate most likely next style from follow-up patterns }
   for i := 0 to 3 do StyleCounts[i] := 0;
+  TransitionCount := 0;
   
   for i := 0 to High(PatternReaderState.AttackHistory) do
   begin
     if PatternReaderState.AttackHistory[i].FollowUpStyle <> asUnknown then
+    begin
       Inc(StyleCounts[Ord(PatternReaderState.AttackHistory[i].FollowUpStyle)]);
+      Inc(TransitionCount);
+    end;
   end;
   
   MaxCount := 0;
@@ -335,10 +433,50 @@ begin
     end;
   end;
   
-  PatternReaderState.PredictedNextStyle := TAttackStyle(MostCommonIdx);
+  if TransitionCount > 0 then
+    PatternReaderState.PredictedNextStyle := TAttackStyle(MostCommonIdx)
+  else
+    PatternReaderState.PredictedNextStyle := OpponentStyle;
   
   if PatternReaderState.TotalObservations > 0 then
-    PatternReaderState.StyleSwitchProbability := MaxCount / PatternReaderState.TotalObservations
+    PatternReaderState.StyleSwitchProbability :=
+      1.0 - (MaxCount / PatternReaderState.TotalObservations)
   else
     PatternReaderState.StyleSwitchProbability := 0.5;
+
+  SwitchCount := 0;
+  for i := 0 to High(PatternReaderState.RollingSwitches) do
+    if PatternReaderState.RollingSwitches[i] then Inc(SwitchCount);
+  if Length(PatternReaderState.RollingSwitches) > 0 then
+    PatternReaderState.RollingSwitchFrequency :=
+      SwitchCount / Length(PatternReaderState.RollingSwitches)
+  else
+    PatternReaderState.RollingSwitchFrequency := 0.5;
+
+  IntervalTotal := 0;
+  for i := 0 to High(PatternReaderState.RollingAttackIntervals) do
+    IntervalTotal := IntervalTotal + PatternReaderState.RollingAttackIntervals[i];
+  if Length(PatternReaderState.RollingAttackIntervals) > 0 then
+    PatternReaderState.RollingAverageAttackInterval :=
+      IntervalTotal / Length(PatternReaderState.RollingAttackIntervals)
+  else
+    PatternReaderState.RollingAverageAttackInterval := 4.0;
+
+  if TransitionCount > 0 then
+    PatternReaderState.NextActionConfidence :=
+      Min(1.0,
+        (MaxCount / TransitionCount) * 0.75 +
+        (Length(PatternReaderState.RollingAttackIntervals) /
+         ROLLING_INTERVAL_WINDOW) * 0.15 +
+        (1.0 - PatternReaderState.RollingSwitchFrequency) * 0.10)
+  else
+    PatternReaderState.NextActionConfidence := 0.2;
+
+  { KO pattern marker from pressure context: fast attacks + low player HP }
+  if (GetAttackCooldownRemaining <= 1) and
+     (GetMyHPPercent <= 0.45) and
+     (Length(PatternReaderState.AttackHistory) > 0) and
+     ((CurrentTick - PatternReaderState.AttackHistory[
+       High(PatternReaderState.AttackHistory)].AttackTick) <= 2) then
+    RecordKOPatternMarker(CurrentTick);
 end;
