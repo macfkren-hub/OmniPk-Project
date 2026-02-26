@@ -14,6 +14,8 @@ const
 
 var
   DebugOverlayEnabled: Boolean = True;
+  DebugOverlayLastEventType: String = '';
+  DebugOverlayLastEventPayload: String = '';
 
 procedure SetDebugEnabled(Enabled: Boolean);
 begin
@@ -23,6 +25,12 @@ end;
 function IsDebugEnabled: Boolean;
 begin
   Result := DebugOverlayEnabled;
+end;
+
+procedure DebugOverlayEventSink(EventType, Payload: String);
+begin
+  DebugOverlayLastEventType := EventType;
+  DebugOverlayLastEventPayload := Payload;
 end;
 
 function AttackStyleStr(S: TAttackStyle): String;
@@ -54,34 +62,49 @@ var
   Y: Integer;
 begin
   if not DebugOverlayEnabled then Exit;
-  
+
   Y := DEBUG_BOTTOM_Y;
-  
-  OmniPK_DrawText(DEBUG_LEFT_X, Y, 
-    Format('Tick:%d Freeze:%s', [GetCurrentTick, 
-      BoolToStr(IsPlayerFrozen)]), DEBUG_COLOR);
-  Y := Y + DEBUG_LINE_HEIGHT;
-  
+
   OmniPK_DrawText(DEBUG_LEFT_X, Y,
-    Format('Pos:(%d,%d) Opp:(%d,%d)', 
+    Format('Tick:%d Freeze:%s Src:%s', [GetCurrentTick,
+      BoolToStr(IsPlayerFrozen), GetFreezeSource]), DEBUG_COLOR);
+  Y := Y + DEBUG_LINE_HEIGHT;
+
+  OmniPK_DrawText(DEBUG_LEFT_X, Y,
+    Format('Pos:(%d,%d) Opp:(%d,%d)',
       [GetPlayerPosition.X, GetPlayerPosition.Y,
        GetOpponentPosition.X, GetOpponentPosition.Y]), DEBUG_COLOR);
   Y := Y + DEBUG_LINE_HEIGHT;
-  
+
   OmniPK_DrawText(DEBUG_LEFT_X, Y,
-    Format('Style:%s Prayer:%s->%s', 
+    Format('Style:%s->%s C:%.2f Prayer:%s->%s',
       [AttackStyleStr(GetOpponentAttackStyle),
+       AttackStyleStr(GetLikelyNextStyle),
+       GetStyleInferenceConfidence,
        PrayerStr(GetCurrentPrayer),
        PrayerStr(RecommendedPrayer)]), DEBUG_COLOR);
   Y := Y + DEBUG_LINE_HEIGHT;
-  
+
   OmniPK_DrawText(DEBUG_LEFT_X, Y,
-    Format('HP:%d Risk:%.2f KO:%s', 
+    Format('HP:%d Risk:%.2f KO:%s',
       [GetPlayerHP, GetKORiskScore,
        BoolToStr(IsKOWindowActive)]), DEBUG_COLOR);
   Y := Y + DEBUG_LINE_HEIGHT;
-  
+
   OmniPK_DrawText(DEBUG_LEFT_X, Y,
-    Format('Desync:%d Splash:%.0f%%', 
-      [GetTickOffset, GetSplashProbability * 100]), DEBUG_COLOR);
+    Format('Move stall:%d forced:%s dsw:%s',
+      [GetMovementStalledTicks,
+       BoolToStr(WasForcedMovementThisTick),
+       BoolToStr(IsInDesyncSensitiveWindow)]), DEBUG_COLOR);
+  Y := Y + DEBUG_LINE_HEIGHT;
+
+  OmniPK_DrawText(DEBUG_LEFT_X, Y,
+    Format('Bus:%d Last:%s %s',
+      [GetEventBusEventsThisTick,
+       GetEventBusLastEventType,
+       GetEventBusLastPayload]), DEBUG_COLOR);
+  Y := Y + DEBUG_LINE_HEIGHT;
+
+  OmniPK_DrawText(DEBUG_LEFT_X, Y,
+    Format('Sink:%s %s', [DebugOverlayLastEventType, DebugOverlayLastEventPayload]), DEBUG_COLOR);
 end;

@@ -71,6 +71,11 @@ const
     361, 362, 363, 367, 369, 177, 178
   );
 
+  FREEZE_WEAPON_ANIM_COUNT = 2;
+  FREEZE_WEAPON_ANIMS: array [0..FREEZE_WEAPON_ANIM_COUNT-1] of Integer = (
+    7514, 1062
+  );
+
   FREEZE_IMMUNITY_TICKS = 5;
   RECENTLY_FROZEN_TICKS = 10;
 
@@ -111,6 +116,21 @@ end;
 {------------------------------------------------------------------------------}
 { IsFreezeProjectile - projectile signal lookup                                }
 {------------------------------------------------------------------------------}
+
+function IsFreezeWeaponAnimation(AnimationId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to FREEZE_WEAPON_ANIM_COUNT - 1 do
+    if FREEZE_WEAPON_ANIMS[i] = AnimationId then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+
 function IsFreezeProjectile(ProjectileId: Integer): Boolean;
 var
   i: Integer;
@@ -504,6 +524,8 @@ begin
   begin
     Inc(PlayerSignals);
     FreezeDetectionState.PlayerFreeze.LastFreezeSource := 'spell';
+    if IsFreezeWeaponAnimation(OppAnim) then
+      FreezeDetectionState.PlayerFreeze.LastFreezeSource := 'weapon';
   end;
 
   ProjectileId := GetDetectedProjectileId(True, CurrentTick);
@@ -513,6 +535,7 @@ begin
     FreezeDetectionState.PlayerFreeze.LastFreezeSource := 'projectile';
   end;
 
+======
   if (FreezeDetectionState.PositionUnchangedTicks >= 1) and
      ((CurrentTick - FreezeDetectionState.LastOpponentFreezeCastTick) <= 1) then
   begin
@@ -547,7 +570,9 @@ begin
   begin
     Inc(OppSignals);
     FreezeDetectionState.OpponentFreeze.LastFreezeSource := 'spell';
-  end;
+
+    if IsFreezeWeaponAnimation(MyAnim) then
+      FreezeDetectionState.OpponentFreeze.LastFreezeSource := 'weapon';
 
   ProjectileId := GetDetectedProjectileId(False, CurrentTick);
   if IsFreezeProjectile(ProjectileId) then

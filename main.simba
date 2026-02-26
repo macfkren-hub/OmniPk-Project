@@ -44,6 +44,7 @@ program OmniPKEngine;
 {$I core/PathingPredictor.simba}
 {$I core/SplashPredictor.simba}
 {$I core/DesyncEngine.simba}
+{$I core/EventBus.simba}
 
 {------------------------------------------------------------------------------}
 { Include Overlay Modules                                                      }
@@ -80,6 +81,15 @@ begin
   // 1. TickTracker - MUST be first (timing source for all others)
   InitTickTracker;
   
+  // 1.5 EventBus - deterministic dispatcher for cross-module wiring
+  InitEventBus;
+  Subscribe(EVT_ON_TICK, @DebugOverlayEventSink);
+  Subscribe(EVT_ON_FREEZE, @DebugOverlayEventSink);
+  Subscribe(EVT_ON_MOVE, @DebugOverlayEventSink);
+  Subscribe(EVT_ON_ATTACK, @DebugOverlayEventSink);
+  Subscribe(EVT_ON_STYLESWAP, @DebugOverlayEventSink);
+  Subscribe(EVT_ON_KOWINDOW, @DebugOverlayEventSink);
+
   // 2. FreezeDetection - Depends on: TickTracker
   InitFreezeDetection;
   
@@ -119,38 +129,38 @@ end;
 {------------------------------------------------------------------------------}
 procedure UpdateAllModules;
 begin
-  // UPDATE ORDER (DO NOT CHANGE):
-  // Each module may depend on state from modules updated before it
-  
-  // 1. TickTracker - ALWAYS first (timing source)
+  // TICK PIPELINE (deterministic order):
+  // TickTracker -> FreezeDetection -> MovementHelper -> AttackStyleDetector
+  // -> PrayerHelper -> PatternReader -> PathingPredictor -> SplashPredictor
+  // -> DesyncEngine -> KOAnalyzer -> EventBus Publish -> Overlays (draw stage)
+
   UpdateTickTracker;
-  
-  // 2. FreezeDetection - Needs current tick
+  Publish(EVT_ON_TICK, IntToStr(GetCurrentTick));
+
   UpdateFreezeDetection;
-  
-  // 3. MovementHelper - Needs freeze status
+  Publish(EVT_ON_FREEZE, BoolToStr(IsPlayerFrozen));
+
   UpdateMovementHelper;
-  
-  // 4. AttackStyleDetector - Needs current tick
+  Publish(EVT_ON_MOVE, IntToStr(GetPlayerPosition.X) + ',' + IntToStr(GetPlayerPosition.Y));
+
   UpdateAttackStyleDetector;
-  
-  // 5. PrayerHelper - Needs attack style
+  Publish(EVT_ON_ATTACK, IntToStr(Ord(GetOpponentAttackStyle)));
+
   UpdatePrayerHelper;
-  
-  // 6. PatternReader - Needs attack style, positions
+
   UpdatePatternReader;
-  
-  // 7. PathingPredictor - Needs positions, freeze status
+
   UpdatePathingPredictor;
-  
-  // 8. SplashPredictor - Independent calculations
+
   UpdateSplashPredictor;
-  
-  // 9. DesyncEngine - Needs timing data
+
   UpdateDesyncEngine;
-  
-  // 10. KOAnalyzer - LAST (needs all other data for analysis)
+
   UpdateKOAnalyzer;
+  if GetOpponentAttackStyle <> GetLikelyNextStyle then
+    Publish(EVT_ON_STYLESWAP, IntToStr(Ord(GetLikelyNextStyle)));
+  if IsKOWindowActive then
+    Publish(EVT_ON_KOWINDOW, FloatToStr(GetKORiskScore));
 end;
 
 {------------------------------------------------------------------------------}

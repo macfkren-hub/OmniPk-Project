@@ -41,15 +41,18 @@ type
     AttackCooldownTicks: Integer;
     SpecBarPercent: Integer;
     IsSpecActive: Boolean;
+    LastSwapTick: Integer;
+    LastPreQueueTick: Integer;
+    StyleInferenceConfidence: Double;
+    RecentStyles: array of TAttackStyle;
+    RecentStyleTicks: array of Integer;
+    LikelyNextStyle: TAttackStyle;
     IsInitialized: Boolean;
   end;
 
 var
   AttackStyleDetectorState: TAttackStyleDetectorState;
 
-{------------------------------------------------------------------------------}
-{ Animation ID sets - sync with config.json attack_detection                   }
-{------------------------------------------------------------------------------}
 const
   MELEE_ANIM_COUNT = 10;
   MELEE_ANIMS: array [0..MELEE_ANIM_COUNT-1] of Integer = (
@@ -63,10 +66,8 @@ const
   MAGIC_ANIMS: array [0..MAGIC_ANIM_COUNT-1] of Integer = (
     711, 1162, 1167, 1978, 1979, 7855
   );
+  STYLE_HISTORY_MAX = 16;
 
-{------------------------------------------------------------------------------}
-{ IsMeleeAnimation - Check if animation is melee attack                        }
-{------------------------------------------------------------------------------}
 function IsMeleeAnimation(AnimId: Integer): Boolean;
 var
   i: Integer;
@@ -76,9 +77,6 @@ begin
     if MELEE_ANIMS[i] = AnimId then begin Result := True; Exit; end;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsRangedAnimation - Check if animation is ranged attack                      }
-{------------------------------------------------------------------------------}
 function IsRangedAnimation(AnimId: Integer): Boolean;
 var
   i: Integer;
@@ -88,9 +86,6 @@ begin
     if RANGED_ANIMS[i] = AnimId then begin Result := True; Exit; end;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsMagicAnimation - Check if animation is magic attack                        }
-{------------------------------------------------------------------------------}
 function IsMagicAnimation(AnimId: Integer): Boolean;
 var
   i: Integer;
@@ -100,9 +95,6 @@ begin
     if MAGIC_ANIMS[i] = AnimId then begin Result := True; Exit; end;
 end;
 
-{------------------------------------------------------------------------------}
-{ AnimationToStyle - Map animation ID to attack style                          }
-{------------------------------------------------------------------------------}
 function AnimationToStyle(AnimId: Integer): TAttackStyle;
 begin
   if AnimId = 0 then Result := asUnknown
@@ -112,114 +104,163 @@ begin
   else Result := asUnknown;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetOpponentAttackStyle - Returns opponent's current attack style             }
-{------------------------------------------------------------------------------}
+function InferStyleFromSignals(AnimId: Integer): TAttackStyle;
+var
+  Dist: Integer;
+  OppGraphic: Integer;
+  ProjectileSignal: Integer;
+begin
+  Result := AnimationToStyle(AnimId);
+  if Result <> asUnknown then Exit;
+
+  Dist := GetTileDistance(GetMyTile, GetOpponentTile);
+  OppGraphic := GetOpponentGraphic;
+
+  if (OppGraphic = 369) or (OppGraphic = 367) or (OppGraphic = 366) or (OppGraphic = 363) then
+    Result := asMagic
+  else if Dist <= 1 then
+    Result := asMelee
+  else
+  begin
+    { deterministic projectile proxy via destination movement + distance }
+    ProjectileSignal := 0;
+    if Dist > 1 then
+      ProjectileSignal := 1;
+    if ProjectileSignal = 1 then
+      Result := asRanged
+    else
+      Result := asUnknown;
+  end;
+end;
+
+procedure PushStyleHistory(Style: TAttackStyle; Tick: Integer);
+var
+  Len: Integer;
+begin
+  Len := Length(AttackStyleDetectorState.RecentStyles);
+  if Len >= STYLE_HISTORY_MAX then
+  begin
+    Move(AttackStyleDetectorState.RecentStyles[1], AttackStyleDetectorState.RecentStyles[0],
+      (Len - 1) * SizeOf(TAttackStyle));
+    Move(AttackStyleDetectorState.RecentStyleTicks[1], AttackStyleDetectorState.RecentStyleTicks[0],
+      (Len - 1) * SizeOf(Integer));
+    Len := STYLE_HISTORY_MAX - 1;
+  end;
+
+  SetLength(AttackStyleDetectorState.RecentStyles, Len + 1);
+  SetLength(AttackStyleDetectorState.RecentStyleTicks, Len + 1);
+  AttackStyleDetectorState.RecentStyles[Len] := Style;
+  AttackStyleDetectorState.RecentStyleTicks[Len] := Tick;
+end;
+
+procedure UpdateLikelyNextStyle;
+var
+  i: Integer;
+  C: array[0..3] of Integer;
+  PrevStyle: TAttackStyle;
+begin
+  for i := 0 to 3 do C[i] := 0;
+
+  PrevStyle := AttackStyleDetectorState.OpponentAttackStyle;
+  for i := 0 to High(AttackStyleDetectorState.RecentStyles) do
+  begin
+    if AttackStyleDetectorState.RecentStyles[i] <> asUnknown then
+      Inc(C[Ord(AttackStyleDetectorState.RecentStyles[i])]);
+  end;
+
+  AttackStyleDetectorState.LikelyNextStyle := PrevStyle;
+  if C[Ord(asMagic)] >= C[Ord(asRanged)] then
+  begin
+    if C[Ord(asMagic)] >= C[Ord(asMelee)] then
+      AttackStyleDetectorState.LikelyNextStyle := asMagic
+    else
+      AttackStyleDetectorState.LikelyNextStyle := asMelee;
+  end
+  else
+  begin
+    if C[Ord(asRanged)] >= C[Ord(asMelee)] then
+      AttackStyleDetectorState.LikelyNextStyle := asRanged
+    else
+      AttackStyleDetectorState.LikelyNextStyle := asMelee;
+  end;
+end;
+
 function GetOpponentAttackStyle: TAttackStyle;
 begin
   Result := AttackStyleDetectorState.OpponentAttackStyle;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetOpponentStyle - Alias for GetOpponentAttackStyle                          }
-{------------------------------------------------------------------------------}
 function GetOpponentStyle: TAttackStyle;
 begin
   Result := GetOpponentAttackStyle;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsMelee - Returns true if opponent is using melee                            }
-{------------------------------------------------------------------------------}
 function IsMelee: Boolean;
 begin
   Result := AttackStyleDetectorState.OpponentAttackStyle = asMelee;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsRange - Returns true if opponent is using ranged                           }
-{------------------------------------------------------------------------------}
 function IsRange: Boolean;
 begin
   Result := AttackStyleDetectorState.OpponentAttackStyle = asRanged;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsMage - Returns true if opponent is using magic                             }
-{------------------------------------------------------------------------------}
 function IsMage: Boolean;
 begin
   Result := AttackStyleDetectorState.OpponentAttackStyle = asMagic;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetOpponentCombatStyle - Returns opponent's specific combat style            }
-{------------------------------------------------------------------------------}
 function GetOpponentCombatStyle: TCombatStyle;
 begin
   Result := AttackStyleDetectorState.OpponentCombatStyle;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetOpponentWeapon - Returns info about opponent's weapon                     }
-{------------------------------------------------------------------------------}
 function GetOpponentWeapon: TWeaponInfo;
 begin
   Result := AttackStyleDetectorState.OpponentWeapon;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetOpponentLastAttackTick - Returns tick when opponent last attacked         }
-{------------------------------------------------------------------------------}
 function GetOpponentLastAttackTick: Integer;
 begin
   Result := AttackStyleDetectorState.LastAttackTick;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetTicksSinceLastAttack - Returns ticks since opponent's last attack         }
-{------------------------------------------------------------------------------}
 function GetTicksSinceLastAttack: Integer;
 begin
   Result := GetCurrentTick - AttackStyleDetectorState.LastAttackTick;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsOpponentAttackReady - Returns true if opponent can attack next tick        }
-{------------------------------------------------------------------------------}
 function IsOpponentAttackReady: Boolean;
 begin
   Result := GetTicksSinceLastAttack >= AttackStyleDetectorState.AttackCooldownTicks;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetAttackCooldownRemaining - Returns ticks until opponent can attack         }
-{------------------------------------------------------------------------------}
 function GetAttackCooldownRemaining: Integer;
 begin
   Result := AttackStyleDetectorState.AttackCooldownTicks - GetTicksSinceLastAttack;
   if Result < 0 then Result := 0;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsSpecActive - Returns true if opponent has special attack active            }
-{------------------------------------------------------------------------------}
 function IsSpecActive: Boolean;
 begin
   Result := AttackStyleDetectorState.IsSpecActive;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetOpponentSpecPercent - Returns opponent's spec bar percentage              }
-{------------------------------------------------------------------------------}
 function GetOpponentSpecPercent: Integer;
 begin
   Result := AttackStyleDetectorState.SpecBarPercent;
 end;
 
-{------------------------------------------------------------------------------}
-{ InitAttackStyleDetector - Initialize the attack style detection system       }
-{------------------------------------------------------------------------------}
+function GetLikelyNextStyle: TAttackStyle;
+begin
+  Result := AttackStyleDetectorState.LikelyNextStyle;
+end;
+
+function GetStyleInferenceConfidence: Double;
+begin
+  Result := AttackStyleDetectorState.StyleInferenceConfidence;
+end;
+
 procedure InitAttackStyleDetector;
 begin
   AttackStyleDetectorState.OpponentAttackStyle := asUnknown;
@@ -235,40 +276,45 @@ begin
   AttackStyleDetectorState.AttackCooldownTicks := 4;
   AttackStyleDetectorState.SpecBarPercent := 100;
   AttackStyleDetectorState.IsSpecActive := False;
+  AttackStyleDetectorState.LastSwapTick := -9999;
+  AttackStyleDetectorState.LastPreQueueTick := -9999;
+  AttackStyleDetectorState.StyleInferenceConfidence := 0.2;
+  SetLength(AttackStyleDetectorState.RecentStyles, 0);
+  SetLength(AttackStyleDetectorState.RecentStyleTicks, 0);
+  AttackStyleDetectorState.LikelyNextStyle := asUnknown;
   AttackStyleDetectorState.IsInitialized := True;
-  
+
   WriteLn('[AttackStyleDetector] Initialized');
 end;
 
-{------------------------------------------------------------------------------}
-{ UpdateAttackStyleDetector - Update attack style detection (call every frame) }
-{------------------------------------------------------------------------------}
 procedure UpdateAttackStyleDetector;
 var
   AnimId: Integer;
-  NewStyle: TAttackStyle;
-  CurrentTick: Integer;
+  NewStyle, PrevStyle: TAttackStyle;
+  CurrentTick, TicksSince: Integer;
 begin
   if not AttackStyleDetectorState.IsInitialized then Exit;
-  
+
   CurrentTick := GetCurrentTick;
   AnimId := GetOpponentAnimation;
-  
-  { Detect new attack: animation changed to an attack animation }
+  PrevStyle := AttackStyleDetectorState.OpponentAttackStyle;
+
   if AnimId <> 0 then
   begin
-    NewStyle := AnimationToStyle(AnimId);
+    NewStyle := InferStyleFromSignals(AnimId);
     if NewStyle <> asUnknown then
     begin
-      { New attack detected }
       if AnimId <> AttackStyleDetectorState.LastAttackAnimation then
       begin
         AttackStyleDetectorState.LastAttackTick := CurrentTick;
         AttackStyleDetectorState.LastAttackAnimation := AnimId;
         AttackStyleDetectorState.OpponentAttackStyle := NewStyle;
         AttackStyleDetectorState.OpponentWeapon.AttackStyle := NewStyle;
-        
-        { Set cooldown based on weapon type }
+
+        if PrevStyle <> asUnknown then
+          if PrevStyle <> NewStyle then
+            AttackStyleDetectorState.LastSwapTick := CurrentTick;
+
         case NewStyle of
           asMelee: AttackStyleDetectorState.AttackCooldownTicks := 4;
           asRanged: AttackStyleDetectorState.AttackCooldownTicks := 5;
@@ -276,8 +322,7 @@ begin
         else
           AttackStyleDetectorState.AttackCooldownTicks := 4;
         end;
-        
-        { Max hit defaults by style }
+
         case NewStyle of
           asMelee: AttackStyleDetectorState.OpponentWeapon.MaxHit := 50;
           asRanged: AttackStyleDetectorState.OpponentWeapon.MaxHit := 48;
@@ -285,9 +330,30 @@ begin
         else
           AttackStyleDetectorState.OpponentWeapon.MaxHit := 40;
         end;
+
+        PushStyleHistory(NewStyle, CurrentTick);
       end;
     end;
   end
   else
+  begin
     AttackStyleDetectorState.LastAttackAnimation := 0;
+    TicksSince := GetTicksSinceLastAttack;
+    if (TicksSince >= AttackStyleDetectorState.AttackCooldownTicks - 1) and
+       (TicksSince <= AttackStyleDetectorState.AttackCooldownTicks + 1) then
+      AttackStyleDetectorState.LastPreQueueTick := CurrentTick;
+  end;
+
+  UpdateLikelyNextStyle;
+
+  if AttackStyleDetectorState.LastSwapTick > 0 then
+    AttackStyleDetectorState.StyleInferenceConfidence := 0.85
+  else
+    AttackStyleDetectorState.StyleInferenceConfidence := 0.55;
+
+  if (CurrentTick - AttackStyleDetectorState.LastPreQueueTick) <= 1 then
+    AttackStyleDetectorState.StyleInferenceConfidence :=
+      AttackStyleDetectorState.StyleInferenceConfidence + 0.1;
+  if AttackStyleDetectorState.StyleInferenceConfidence > 1.0 then
+    AttackStyleDetectorState.StyleInferenceConfidence := 1.0;
 end;

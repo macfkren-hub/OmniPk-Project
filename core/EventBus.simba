@@ -1,0 +1,121 @@
+{==============================================================================}
+{  OmniPK Engine - EventBus Module                                             }
+{  Deterministic event dispatch for cross-module communication.                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_EVENTBUS}
+
+type
+  TEventCallback = procedure(EventType, Payload: String);
+
+  TEventSubscription = record
+    EventType: String;
+    Callback: TEventCallback;
+  end;
+
+  TEventBusState = record
+    Subscriptions: array of TEventSubscription;
+    LastPublishedTick: Integer;
+    EventsThisTick: Integer;
+    LastEventType: String;
+    LastEventPayload: String;
+    IsInitialized: Boolean;
+  end;
+
+var
+  EventBusState: TEventBusState;
+
+const
+  EVT_ON_TICK      = 'OnTick';
+  EVT_ON_FREEZE    = 'OnFreeze';
+  EVT_ON_MOVE      = 'OnMove';
+  EVT_ON_ATTACK    = 'OnAttack';
+  EVT_ON_STYLESWAP = 'OnStyleSwap';
+  EVT_ON_KOWINDOW  = 'OnKOWindow';
+
+procedure InitEventBus;
+begin
+  SetLength(EventBusState.Subscriptions, 0);
+  EventBusState.LastPublishedTick := -1;
+  EventBusState.EventsThisTick := 0;
+  EventBusState.LastEventType := '';
+  EventBusState.LastEventPayload := '';
+  EventBusState.IsInitialized := True;
+end;
+
+procedure Subscribe(EventType: String; Callback: TEventCallback);
+var
+  Len: Integer;
+begin
+  if not EventBusState.IsInitialized then InitEventBus;
+
+  Len := Length(EventBusState.Subscriptions);
+  SetLength(EventBusState.Subscriptions, Len + 1);
+  EventBusState.Subscriptions[Len].EventType := EventType;
+  EventBusState.Subscriptions[Len].Callback := Callback;
+end;
+
+
+function GetEventBusEventsThisTick: Integer;
+begin
+  Result := EventBusState.EventsThisTick;
+end;
+
+function GetEventBusLastEventType: String;
+begin
+  Result := EventBusState.LastEventType;
+end;
+
+function GetEventBusLastPayload: String;
+begin
+  Result := EventBusState.LastEventPayload;
+end;
+
+procedure Publish(EventType, Payload: String);
+var
+  i: Integer;
+begin
+  if not EventBusState.IsInitialized then InitEventBus;
+
+  if EventBusState.LastPublishedTick <> GetCurrentTick then
+    EventBusState.EventsThisTick := 0;
+  EventBusState.LastPublishedTick := GetCurrentTick;
+  EventBusState.LastEventType := EventType;
+  EventBusState.LastEventPayload := Payload;
+  Inc(EventBusState.EventsThisTick);
+
+  for i := 0 to High(EventBusState.Subscriptions) do
+  begin
+    if (EventBusState.Subscriptions[i].EventType = EventType) and
+       Assigned(EventBusState.Subscriptions[i].Callback) then
+      EventBusState.Subscriptions[i].Callback(EventType, Payload);
+  end;
+end;
+
+procedure PublishTickEvents;
+var
+  TickNow: Integer;
+begin
+  TickNow := GetCurrentTick;
+
+  if TickNow <> EventBusState.LastPublishedTick then
+    Publish(EVT_ON_TICK, IntToStr(TickNow));
+
+  if IsPlayerFrozen then
+    Publish(EVT_ON_FREEZE, 'player')
+  else if IsOpponentFrozen then
+    Publish(EVT_ON_FREEZE, 'opponent');
+
+  if GetLastMoveTick = TickNow then
+    Publish(EVT_ON_MOVE, IntToStr(GetPlayerPosition.X) + ',' + IntToStr(GetPlayerPosition.Y));
+
+  if GetOpponentLastAttackTick = TickNow then
+    Publish(EVT_ON_ATTACK, IntToStr(Ord(GetOpponentAttackStyle)));
+
+  if (GetOpponentAttackStyle <> GetLikelyNextStyle) and
+     (GetLikelyNextStyle <> asUnknown) then
+    Publish(EVT_ON_STYLESWAP, IntToStr(Ord(GetLikelyNextStyle)));
+
+  if IsKOWindowActive then
+    Publish(EVT_ON_KOWINDOW, FloatToStr(GetKORiskScore));
+end;
