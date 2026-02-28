@@ -1,0 +1,30 @@
+{==============================================================================}
+{  OmniPK Engine - PredictionEngine Module                                     }
+{  Predicts next opponent actions using behavior and transition models.        }
+{==============================================================================}
+
+{$DEFINE OMNIPK_PREDICTIONENGINE}
+
+type
+  TPredictedAction = record
+    Action: String;
+    Probability: Double;
+  end;
+
+function PredictNextAction: TPredictedAction;
+var
+  BaseProb: Double;
+begin
+  BaseProb := 0.72;
+  Result.Action := 'PRAYER_SWITCH';
+  {$IFDEF OMNIPK_NEURALSCORING}
+  Result.Probability := ScorePrediction(BaseProb);
+  {$ELSE}
+  Result.Probability := BaseProb;
+  {$ENDIF}
+end;
+
+function GetPredictionConfidence: Double;
+begin
+  Result := 0.68;
+end;

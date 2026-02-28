@@ -1,0 +1,22 @@
+{==============================================================================}
+{  OmniPK Engine - AutoPrayer Module                                           }
+{  Automatically switches protection prayers based on opponent's style.        }
+{==============================================================================}
+
+{$DEFINE OMNIPK_AUTOPRAYER}
+
+procedure DoAutoPrayer;
+var
+  Recommended: TPrayerType;
+begin
+  if not GetConfigBoolean('auto_prayer_enabled', False) then Exit;
+
+  Recommended := RecommendedPrayer();
+  if (Recommended <> ptNone) and (Recommended <> GetCurrentPrayer()) then
+  begin
+    OmniLog('AutoPrayer: Switching to ' + ToStr(Recommended), DEBUG_LEVEL_INFO);
+    { In a real implementation, this would call a game action like ClickPrayer(Recommended) }
+    { For now, we simulate the action }
+    SetCurrentPrayer(Recommended);
+  end;
+end;

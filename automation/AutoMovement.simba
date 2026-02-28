@@ -1,0 +1,24 @@
+{==============================================================================}
+{  OmniPK Engine - AutoMovement Module                                         }
+{  Automatically moves to safe tiles.                                          }
+{==============================================================================}
+
+{$DEFINE OMNIPK_AUTOMOVEMENT}
+
+procedure DoAutoMovement;
+var
+  BestTile: TPoint;
+begin
+  if not GetConfigBoolean('auto_movement_enabled', False) then Exit;
+
+  if GetKORiskScore() > 0.7 then
+  begin
+    BestTile := GetBestSafeTile();
+    if (BestTile.X <> GetPlayerTile.X) or (BestTile.Y <> GetPlayerTile.Y) then
+    begin
+      OmniLog(Format('AutoMovement: Stepping to (%d, %d)', [BestTile.X, BestTile.Y]), DEBUG_LEVEL_INFO);
+      { Simulate movement }
+      SetPlayerTile(BestTile.X, BestTile.Y);
+    end;
+  end;
+end;

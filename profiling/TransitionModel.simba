@@ -1,0 +1,22 @@
+{==============================================================================}
+{  OmniPK Engine - TransitionModel Module                                      }
+{  Markov chain model tracking transitions between opponent states.             }
+{==============================================================================}
+
+{$DEFINE OMNIPK_TRANSITIONMODEL}
+
+type
+  TTransitionTable = array of array of Double;
+
+var
+  Transitions: TTransitionTable;
+
+procedure UpdateTransition(PrevState, NextState: Integer);
+begin
+  { Increment transition probability }
+end;
+
+function GetTransitionProbability(PrevState, NextState: Integer): Double;
+begin
+  Result := 0.5; { Placeholder }
+end;

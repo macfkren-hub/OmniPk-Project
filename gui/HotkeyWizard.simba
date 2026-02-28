@@ -1,0 +1,16 @@
+{==============================================================================}
+{  OmniPK Engine - HotkeyWizard Module                                         }
+{  First-time setup wizard for capturing hotkeys.                              }
+{==============================================================================}
+
+{$DEFINE OMNIPK_HOTKEYWIZARD}
+
+procedure ShowHotkeyWizard;
+begin
+  OmniLog('HotkeyWizard: Opening setup wizard...', DEBUG_LEVEL_INFO);
+end;
+
+procedure CaptureHotkey(ActionName: String);
+begin
+  OmniLog('HotkeyWizard: Capturing key for ' + ActionName, DEBUG_LEVEL_INFO);
+end;

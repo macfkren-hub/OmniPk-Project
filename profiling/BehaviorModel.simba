@@ -1,0 +1,35 @@
+{==============================================================================}
+{  OmniPK Engine - BehaviorModel Module                                        }
+{  Extracts behavior events from fight logs and maintains rolling statistics.   }
+{==============================================================================}
+
+{$DEFINE OMNIPK_BEHAVIORMODEL}
+
+type
+  TBehaviorStats = record
+    EatCount: Integer;
+    SpecCount: Integer;
+    FreezeAttempts: Integer;
+    Splashes: Integer;
+    AvgEatHP: Double;
+    StepUnderFrequency: Double;
+  end;
+
+var
+  CurrentOpponentStats: TBehaviorStats;
+
+procedure RecordBehavior(EventType: String; Data: String);
+begin
+  OmniLog('BehaviorModel: Recording ' + EventType, DEBUG_LEVEL_INFO);
+  { Update stats based on event }
+end;
+
+function GetBehaviorStats: TBehaviorStats;
+begin
+  Result := CurrentOpponentStats;
+end;
+
+procedure ResetBehaviorSession;
+begin
+  FillChar(CurrentOpponentStats, SizeOf(CurrentOpponentStats), 0);
+end;

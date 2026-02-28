@@ -30,7 +30,14 @@
   "overlay": {
     "enabled": true,
     "alpha": 180,
-    "theme": "neon"
+    "theme": "neon",
+    "overlay_tickpulse_enabled": true,
+    "overlay_freezeprojection_enabled": true,
+    "overlay_splashaura_enabled": true,
+    "overlay_movementvector_enabled": true,
+    "overlay_tileheatmap_enabled": true,
+    "animation_speed": 1.0,
+    "animation_intensity": 1.0
   },
   
   "colors": {
@@ -90,6 +97,21 @@
     "force_refresh": "F5"
   },
   
+  "automation": {
+    "auto_prayer_enabled": false,
+    "auto_movement_enabled": false,
+    "auto_freeze_enabled": false,
+    "auto_spec_enabled": false,
+    "auto_eat_enabled": false,
+    "reaction_time_ms": 150
+  },
+
+  "cloud": {
+    "cloud_sync_enabled": false,
+    "cloud_sync_endpoint": "https://api.omnipk.io/v1",
+    "cloud_sync_interval_minutes": 15
+  },
+
   "performance": {
     "max_history_entries": 50,
     "pattern_memory_max_opponents": 100,

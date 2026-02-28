@@ -1,0 +1,15 @@
+{==============================================================================}
+{  OmniPK Engine - SimulationOverlay Module                                    }
+{  Visualizes simulation results (predicted paths, KO windows).                }
+{==============================================================================}
+
+{$DEFINE OMNIPK_SIMULATIONOVERLAY}
+
+procedure DrawSimulationOverlay;
+var
+  Summary: String;
+begin
+  Summary := GetSimulationSummary();
+  OmniPK_DrawText(10, 450, Summary, $00FFFF);
+  { Draw predicted path on world }
+end;

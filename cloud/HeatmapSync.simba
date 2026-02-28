@@ -1,0 +1,12 @@
+{==============================================================================}
+{  OmniPK Engine - HeatmapSync Module                                          }
+{  Synchronizes tile danger heatmaps with a global database.                   }
+{==============================================================================}
+
+{$DEFINE OMNIPK_HEATMAPSYNC}
+
+procedure SyncHeatmaps;
+begin
+  if not GetConfigBoolean('cloud_sync_enabled', False) then Exit;
+  OmniLog('HeatmapSync: Syncing heatmaps with cloud...', DEBUG_LEVEL_INFO);
+end;

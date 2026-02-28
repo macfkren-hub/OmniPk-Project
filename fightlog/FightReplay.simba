@@ -1,0 +1,39 @@
+{==============================================================================}
+{  OmniPK Engine - FightReplay Module                                          }
+{  Replays movement and overlays from fight logs.                              }
+{==============================================================================}
+
+{$DEFINE OMNIPK_FIGHTREPLAY}
+
+var
+  ReplayActive: Boolean;
+  ReplayIndex: Integer;
+
+procedure StartReplay;
+begin
+  if Length(FightHistory) = 0 then
+  begin
+    OmniLog('No fight history to replay', DEBUG_LEVEL_WARNING);
+    Exit;
+  end;
+  ReplayActive := True;
+  ReplayIndex := 0;
+  OmniLog('Starting fight replay...', DEBUG_LEVEL_INFO);
+end;
+
+procedure UpdateReplay;
+begin
+  if not ReplayActive then Exit;
+
+  if ReplayIndex < Length(FightHistory) then
+  begin
+    { In replay mode, we override core data with historical data }
+    Inc(ReplayIndex);
+    Wait(600); { Simulate tick delay }
+  end
+  else
+  begin
+    ReplayActive := False;
+    OmniLog('Replay finished.', DEBUG_LEVEL_INFO);
+  end;
+end;

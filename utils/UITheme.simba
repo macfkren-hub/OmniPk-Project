@@ -1,0 +1,19 @@
+{==============================================================================}
+{  OmniPK Engine - UITheme Module                                              }
+{  Consistent colors, fonts, and layout constants for the interface.           }
+{==============================================================================}
+
+{$DEFINE OMNIPK_UITHEME}
+
+const
+  UI_COLOR_MAIN_BG   = $1A1A1A;
+  UI_COLOR_ACCENT    = $00FFFF;
+  UI_COLOR_TEXT      = $FFFFFF;
+  UI_COLOR_SUCCESS   = $00FF00;
+  UI_COLOR_WARNING   = $00A5FF;
+  UI_COLOR_DANGER    = $0000FF;
+
+const
+  UI_FONT_SIZE_SMALL  = 10;
+  UI_FONT_SIZE_NORMAL = 12;
+  UI_FONT_SIZE_LARGE  = 16;

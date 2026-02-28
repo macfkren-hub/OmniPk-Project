@@ -46,7 +46,11 @@ begin
     DesyncText := 'SYNC';
 
   if HasDesyncAdvantage then
-    OmniPK_DrawText(HUD_LEFT_X, Y, DesyncText, COLOR_LIME_GREEN)
+  begin
+    OmniPK_DrawText(HUD_LEFT_X, Y, DesyncText + ' [ADV]', COLOR_LIME_GREEN);
+    { Draw star icon for advantage }
+    OmniPK_DrawCircle(HUD_LEFT_X + 110, Y + 8, 5, $00FFFF, True);
+  end
   else if GetTickOffset < 0 then
     OmniPK_DrawText(HUD_LEFT_X, Y, DesyncText, COLOR_DANGER_RED)
   else

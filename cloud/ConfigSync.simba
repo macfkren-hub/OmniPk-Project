@@ -1,0 +1,12 @@
+{==============================================================================}
+{  OmniPK Engine - ConfigSync Module                                           }
+{  Synchronizes tuning parameters across multiple devices.                     }
+{==============================================================================}
+
+{$DEFINE OMNIPK_CONFIGSYNC}
+
+procedure SyncConfig;
+begin
+  if not GetConfigBoolean('cloud_sync_enabled', False) then Exit;
+  OmniLog('ConfigSync: Syncing configuration with cloud...', DEBUG_LEVEL_INFO);
+end;

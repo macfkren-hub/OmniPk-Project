@@ -45,7 +45,7 @@ var
   CurrentPrayer, RecommendedPray: TPrayerType;
   IsMismatch: Boolean;
   Text: String;
-  PredHit: Integer;
+  GlowAlpha: Double;
 begin
   CurrentPrayer := GetCurrentPrayer;
   RecommendedPray := RecommendedPrayer;
@@ -54,6 +54,8 @@ begin
 
   if IsMismatch then
   begin
+    GlowAlpha := SmoothPulse(0.5, 1.0, 15.0);
+    OmniPK_DrawRect(PRAYER_X - 10, PRAYER_Y - 5, 100, 30, SmoothColorShift($000000, PRAYER_COLOR_MISMATCH, GlowAlpha), False);
     Text := Format('USE %s!', [GetPrayerName(RecommendedPray)]);
     OmniPK_DrawText(PRAYER_X, PRAYER_Y, Text, PRAYER_COLOR_MISMATCH);
   end

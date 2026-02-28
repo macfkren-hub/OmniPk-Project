@@ -1,0 +1,26 @@
+{==============================================================================}
+{  OmniPK Engine - MovementVectorOverlay Module                                }
+{  Shows arrows indicating predicted opponent movement.                         }
+{==============================================================================}
+
+{$DEFINE OMNIPK_MOVEMENTVECTOROVERLAY}
+
+procedure DrawMovementVectorOverlay;
+var
+  OppTile, PredTile: TPoint;
+  OppPos, PredPos: TPoint;
+begin
+  if not GetConfigBoolean('overlay_movementvector_enabled', True) then Exit;
+
+  OppTile := GetOpponentTile();
+  PredTile := GetPredictedOpponentTile();
+
+  if (OppTile.X <> PredTile.X) or (OppTile.Y <> PredTile.Y) then
+  begin
+    OppPos := OmniPK_WorldToScreen(OppTile.X, OppTile.Y);
+    PredPos := OmniPK_WorldToScreen(PredTile.X, PredTile.Y);
+
+    OmniPK_DrawLine(OppPos.X, OppPos.Y, PredPos.X, PredPos.Y, $FFFFFF);
+    OmniPK_DrawCircle(PredPos.X, PredPos.Y, 5, $FFFFFF, True);
+  end;
+end;

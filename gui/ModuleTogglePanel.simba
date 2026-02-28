@@ -1,0 +1,11 @@
+{==============================================================================}
+{  OmniPK Engine - ModuleTogglePanel Module                                    }
+{  UI for toggling modules on/off with visual indicators.                      }
+{==============================================================================}
+
+{$DEFINE OMNIPK_MODULETOGGLEPANEL}
+
+procedure ShowTogglePanel;
+begin
+  OmniLog('ModuleTogglePanel: Opening toggle panel...', DEBUG_LEVEL_INFO);
+end;

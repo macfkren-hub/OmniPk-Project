@@ -1,0 +1,17 @@
+{==============================================================================}
+{  OmniPK Engine - NeuralScoring Module                                        }
+{  Weighted scoring for predictions and risk assessment.                       }
+{==============================================================================}
+
+{$DEFINE OMNIPK_NEURALSCORING}
+
+function ScorePrediction(Input: Double): Double;
+begin
+  { Simple activation function like sigmoid }
+  Result := 1.0 / (1.0 + Exp(-Input));
+end;
+
+function ScoreRisk(Input: Double): Double;
+begin
+  Result := Input * 1.2; { Weighted risk }
+end;

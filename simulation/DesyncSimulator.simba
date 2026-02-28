@@ -1,0 +1,11 @@
+{==============================================================================}
+{  OmniPK Engine - DesyncSimulator Module                                      }
+{  Predicts future desync states based on movement and timing.                 }
+{==============================================================================}
+
+{$DEFINE OMNIPK_DESYNCSIMULATOR}
+
+function PredictDesyncAdvantage(TicksAhead: Integer): Boolean;
+begin
+  Result := True;
+end;

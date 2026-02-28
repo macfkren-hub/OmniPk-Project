@@ -1,0 +1,25 @@
+{==============================================================================}
+{  OmniPK Engine - TickPulseOverlay Module                                     }
+{  Visualizes game tick progress with a pulsing ring around the player.        }
+{==============================================================================}
+
+{$DEFINE OMNIPK_TICKPULSEOVERLAY}
+
+procedure DrawTickPulseOverlay;
+var
+  TickProgress: Double;
+  Radius: Integer;
+  PulseColor: Integer;
+  PlayerPos: TPoint;
+begin
+  if not GetConfigBoolean('overlay_tickpulse_enabled', True) then Exit;
+
+  TickProgress := GetTickProgress(); { 0.0 to 1.0 }
+  PlayerPos := OmniPK_WorldToScreen(GetPlayerTile.X, GetPlayerTile.Y);
+
+  { Pulse expands and fades as tick progresses }
+  Radius := 20 + Round(TickProgress * 40);
+  PulseColor := SmoothColorShift($00FF00, $0000FF, TickProgress);
+
+  OmniPK_DrawCircle(PlayerPos.X, PlayerPos.Y, Radius, PulseColor, False);
+end;

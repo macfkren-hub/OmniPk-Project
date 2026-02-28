@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "fields": [
+    "tick",
+    "player_tile",
+    "opponent_tile",
+    "player_hp",
+    "opponent_hp",
+    "player_prayer",
+    "opponent_style",
+    "ko_risk",
+    "desync_advantage",
+    "freeze_status",
+    "event_type",
+    "event_data"
+  ]
+}

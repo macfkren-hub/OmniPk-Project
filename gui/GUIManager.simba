@@ -1,0 +1,22 @@
+{==============================================================================}
+{  OmniPK Engine - GUIManager Module                                           }
+{  Central controller for all GUI components.                                  }
+{==============================================================================}
+
+{$DEFINE OMNIPK_GUIMANAGER}
+
+procedure InitGUIManager;
+begin
+  OmniLog('GUIManager: Initialized', DEBUG_LEVEL_INFO);
+end;
+
+procedure ShowMainMenu;
+begin
+  ShowTogglePanel();
+  ShowModeSelector();
+end;
+
+procedure ToggleHUD;
+begin
+  { Toggle visibility of StatusHUD }
+end;
