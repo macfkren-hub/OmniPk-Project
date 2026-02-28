@@ -7,54 +7,93 @@
 {$DEFINE OMNIPK_TILEOVERLAY}
 
 const
-  TILE_COLOR_SAFE     = $00FF00;
-  TILE_COLOR_CAUTION  = $00FFFF;
-  TILE_COLOR_DANGER   = $4444FF;
+  TILE_COLOR_SAFE        = $00FF00;
+  TILE_COLOR_CAUTION     = $00FFFF;
+  TILE_COLOR_DANGER      = $4444FF;
   TILE_COLOR_RECOMMENDED = $FFFF00;
+  TILE_COLOR_DESYNC      = $F020A0;
+
+var
+  TileOverlayCacheTick: Integer = -1;
+  TileOverlayCacheWorld: array[0..7] of TPoint;
+  TileOverlayCacheScreen: array[0..7] of TPoint;
+
+function CachedWorldToScreen(P: TPoint): TPoint;
+var
+  i: Integer;
+begin
+  if TileOverlayCacheTick <> GetCurrentTick then
+  begin
+    TileOverlayCacheTick := GetCurrentTick;
+    for i := 0 to 7 do
+    begin
+      TileOverlayCacheWorld[i] := Point(-99999, -99999);
+      TileOverlayCacheScreen[i] := Point(-99999, -99999);
+    end;
+  end;
+
+  for i := 0 to 7 do
+    if (TileOverlayCacheWorld[i].X = P.X) and (TileOverlayCacheWorld[i].Y = P.Y) then
+    begin
+      Result := TileOverlayCacheScreen[i];
+      Exit;
+    end;
+
+  Result := OmniPK_WorldToScreen(P.X, P.Y);
+  for i := 0 to 7 do
+    if TileOverlayCacheWorld[i].X = -99999 then
+    begin
+      TileOverlayCacheWorld[i] := P;
+      TileOverlayCacheScreen[i] := Result;
+      Break;
+    end;
+end;
 
 procedure DrawTileOverlay;
 var
-  RecTile, PlayerPos, OppPos: TPoint;
-  ScreenPt: TPoint;
-  Dist: Integer;
+  RecTile, PlayerPos, OppPos, ScreenPt: TPoint;
+  Dist, i: Integer;
+  Pred: array of TPoint;
 begin
   RecTile := GetRecommendedTile;
   PlayerPos := GetPlayerPosition;
   OppPos := GetOpponentPosition;
-  
-  { Only draw if we have valid positions }
+
   if (PlayerPos.X = 0) and (PlayerPos.Y = 0) then Exit;
-  
-  { Recommended tile - highlight }
-  if (RecTile.X <> 0) or (RecTile.Y <> 0) then
+
+  if (RecTile.X <> PlayerPos.X) or (RecTile.Y <> PlayerPos.Y) then
   begin
-    if (RecTile.X <> PlayerPos.X) or (RecTile.Y <> PlayerPos.Y) then
-    begin
-      ScreenPt := OmniPK_WorldToScreen(RecTile.X, RecTile.Y);
-      OmniPK_DrawRect(ScreenPt.X - 8, ScreenPt.Y - 8, 16, 16, 
-        TILE_COLOR_RECOMMENDED);
-    end;
+    ScreenPt := CachedWorldToScreen(RecTile);
+    OmniPK_DrawRect(ScreenPt.X - 8, ScreenPt.Y - 8, 16, 16, TILE_COLOR_RECOMMENDED);
   end;
-  
-  { Player tile - subtle indicator when frozen }
+
+  ScreenPt := CachedWorldToScreen(PlayerPos);
   if IsPlayerFrozen then
-  begin
-    ScreenPt := OmniPK_WorldToScreen(PlayerPos.X, PlayerPos.Y);
-    OmniPK_DrawRect(ScreenPt.X - 6, ScreenPt.Y - 6, 12, 12, TILE_COLOR_CAUTION);
-  end;
-  
-  { Opponent tile - danger zone }
+    OmniPK_DrawRect(ScreenPt.X - 6, ScreenPt.Y - 6, 12, 12, TILE_COLOR_CAUTION)
+  else if IsInDesyncSensitiveWindow then
+    OmniPK_DrawRect(ScreenPt.X - 6, ScreenPt.Y - 6, 12, 12, TILE_COLOR_DESYNC);
+
   if (OppPos.X <> 0) or (OppPos.Y <> 0) then
   begin
-    ScreenPt := OmniPK_WorldToScreen(OppPos.X, OppPos.Y);
+    ScreenPt := CachedWorldToScreen(OppPos);
     OmniPK_DrawRect(ScreenPt.X - 4, ScreenPt.Y - 4, 8, 8, TILE_COLOR_DANGER);
   end;
-  
+
   Dist := GetDistanceToOpponent;
   if Dist <= 1 then
   begin
-    { Melee range - draw danger zone around opponent }
-    ScreenPt := OmniPK_WorldToScreen(OppPos.X, OppPos.Y);
+    ScreenPt := CachedWorldToScreen(OppPos);
     OmniPK_DrawRect(ScreenPt.X - 16, ScreenPt.Y - 16, 32, 32, TILE_COLOR_DANGER);
+  end;
+
+  Pred := PredictTiles(3);
+  for i := 1 to High(Pred) do
+  begin
+    if not IsValidTile(Pred[i]) then Continue;
+    ScreenPt := CachedWorldToScreen(Pred[i]);
+    if IsTileBlocked(Pred[i]) then
+      OmniPK_DrawRect(ScreenPt.X - 3, ScreenPt.Y - 3, 6, 6, TILE_COLOR_DANGER)
+    else
+      OmniPK_DrawRect(ScreenPt.X - 3, ScreenPt.Y - 3, 6, 6, TILE_COLOR_SAFE);
   end;
 end;

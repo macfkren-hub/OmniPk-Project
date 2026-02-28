@@ -50,8 +50,8 @@ begin
   CurrentPrayer := GetCurrentPrayer;
   RecommendedPray := RecommendedPrayer;
   IsMismatch := IsPrayerMismatch;
-  
-  { Mismatch warning - context-aware: prominent when wrong prayer }
+  PredHit := GetPredictedHitTick;
+
   if IsMismatch then
   begin
     GlowAlpha := SmoothPulse(0.5, 1.0, 15.0);
@@ -67,9 +67,12 @@ begin
     else
       OmniPK_DrawText(PRAYER_X, PRAYER_Y, Text, $FFFFFF);
   end;
-  
-  { Low prayer warning }
+
+  OmniPK_DrawText(PRAYER_X, PRAYER_Y + 16,
+    Format('Hit@%d Flick:%s Off:%s', [PredHit, BoolToStr(IsFlicking), BoolToStr(IsOffTick)]),
+    GetPrayerColor(RecommendedPray));
+
   if GetPrayerPoints < 20 then
-    OmniPK_DrawText(PRAYER_X, PRAYER_Y + 18, 
+    OmniPK_DrawText(PRAYER_X, PRAYER_Y + 32,
       Format('PP: %d', [GetPrayerPoints]), PRAYER_COLOR_MISMATCH);
 end;

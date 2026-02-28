@@ -27,6 +27,11 @@ type
     FreezeDurationTicks: Integer;
     FreezeEndTick: Integer;
     TicksRemaining: Integer;
+    ImmunityStartTick: Integer;
+    ImmunityEndTick: Integer;
+    RecentlyFrozenUntilTick: Integer;
+    LastFreezeSource: String; // spell, weapon, projectile, gfx, animation, hitsplat
+    LastFreezeDetectTick: Integer;
   end;
 
   TFreezeDetectionState = record
@@ -36,6 +41,10 @@ type
     LastOpponentPosition: TPoint;
     PositionUnchangedTicks: Integer;
     OpponentPositionUnchangedTicks: Integer;
+    LastOpponentFreezeCastTick: Integer;
+    LastPlayerFreezeCastTick: Integer;
+    LastPlayerPotentialHitTick: Integer;
+    LastOpponentPotentialHitTick: Integer;
     IsInitialized: Boolean;
   end;
 
@@ -52,6 +61,24 @@ const
     363, 366, 367, 369, 437, 438, 439
   );
 
+  FREEZE_CAST_ANIM_COUNT = 8;
+  FREEZE_CAST_ANIMS: array [0..FREEZE_CAST_ANIM_COUNT-1] of Integer = (
+    1978, 1979, 1162, 1167, 711, 726, 727, 710
+  );
+
+  FREEZE_PROJECTILE_COUNT = 7;
+  FREEZE_PROJECTILES: array [0..FREEZE_PROJECTILE_COUNT-1] of Integer = (
+    361, 362, 363, 367, 369, 177, 178
+  );
+
+  FREEZE_WEAPON_ANIM_COUNT = 2;
+  FREEZE_WEAPON_ANIMS: array [0..FREEZE_WEAPON_ANIM_COUNT-1] of Integer = (
+    7514, 1062
+  );
+
+  FREEZE_IMMUNITY_TICKS = 5;
+  RECENTLY_FROZEN_TICKS = 10;
+
 {------------------------------------------------------------------------------}
 { IsFreezeGraphic - Check if graphic ID indicates frozen state                 }
 {------------------------------------------------------------------------------}
@@ -67,6 +94,85 @@ begin
       Result := True;
       Exit;
     end;
+  end;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsFreezeCastAnimation - known freeze cast animation IDs                       }
+{------------------------------------------------------------------------------}
+function IsFreezeCastAnimation(AnimationId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to FREEZE_CAST_ANIM_COUNT - 1 do
+    if FREEZE_CAST_ANIMS[i] = AnimationId then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+{------------------------------------------------------------------------------}
+{ IsFreezeProjectile - projectile signal lookup                                }
+{------------------------------------------------------------------------------}
+
+function IsFreezeWeaponAnimation(AnimationId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to FREEZE_WEAPON_ANIM_COUNT - 1 do
+    if FREEZE_WEAPON_ANIMS[i] = AnimationId then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+
+function IsFreezeProjectile(ProjectileId: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 0 to FREEZE_PROJECTILE_COUNT - 1 do
+    if FREEZE_PROJECTILES[i] = ProjectileId then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetDetectedProjectileId - deterministic inferred projectile ID signal         }
+{------------------------------------------------------------------------------}
+function GetDetectedProjectileId(IsPlayerTarget: Boolean; CurrentTick: Integer): Integer;
+var
+  Dist: Integer;
+  MyTile, OppTile: TPoint;
+begin
+  Result := 0;
+
+  { No explicit projectile API in GameAPI, so infer deterministic projectile
+    presence from cast timing + tile separation in the same tick-window. }
+  MyTile := GetMyTile;
+  OppTile := GetOpponentTile;
+  Dist := Max(Abs(MyTile.X - OppTile.X), Abs(MyTile.Y - OppTile.Y));
+
+  if IsPlayerTarget then
+  begin
+    if (FreezeDetectionState.LastOpponentFreezeCastTick > 0) and
+       ((CurrentTick - FreezeDetectionState.LastOpponentFreezeCastTick) <= 1) and
+       (Dist >= 1) then
+      Result := 369;
+  end
+  else
+  begin
+    if (FreezeDetectionState.LastPlayerFreezeCastTick > 0) and
+       ((CurrentTick - FreezeDetectionState.LastPlayerFreezeCastTick) <= 1) and
+       (Dist >= 1) then
+      Result := 369;
   end;
 end;
 
@@ -124,11 +230,27 @@ begin
 end;
 
 {------------------------------------------------------------------------------}
+{ IsFrozen - Generic helper for player freeze state                             }
+{------------------------------------------------------------------------------}
+function IsFrozen: Boolean;
+begin
+  Result := IsPlayerFrozen;
+end;
+
+{------------------------------------------------------------------------------}
 { GetPlayerFreezeTicksRemaining - Returns ticks until player unfreezes         }
 {------------------------------------------------------------------------------}
 function GetPlayerFreezeTicksRemaining: Integer;
 begin
   Result := FreezeDetectionState.PlayerFreeze.TicksRemaining;
+end;
+
+{------------------------------------------------------------------------------}
+{ TicksRemaining - Generic helper for player freeze ticks                       }
+{------------------------------------------------------------------------------}
+function TicksRemaining: Integer;
+begin
+  Result := GetPlayerFreezeTicksRemaining;
 end;
 
 {------------------------------------------------------------------------------}
@@ -164,30 +286,81 @@ begin
 end;
 
 {------------------------------------------------------------------------------}
+{ WasRecentlyFrozen - true if player freeze ended recently                     }
+{------------------------------------------------------------------------------}
+function WasRecentlyFrozen: Boolean;
+begin
+  Result := GetCurrentTick <= FreezeDetectionState.PlayerFreeze.RecentlyFrozenUntilTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ GetFreezeSource - Returns last freeze source for player                      }
+{------------------------------------------------------------------------------}
+function GetFreezeSource: String;
+begin
+  Result := FreezeDetectionState.PlayerFreeze.LastFreezeSource;
+  if Result = '' then Result := 'none';
+end;
+
+{------------------------------------------------------------------------------}
+{ InFreezeImmunityWindow - Prevent immediate re-freeze                          }
+{------------------------------------------------------------------------------}
+function InFreezeImmunityWindow(const Info: TFreezeInfo; CurrentTick: Integer): Boolean;
+begin
+  Result := CurrentTick < Info.ImmunityEndTick;
+end;
+
+{------------------------------------------------------------------------------}
+{ FinalizeFreezeEnd - transition frozen -> immune/recent                        }
+{------------------------------------------------------------------------------}
+procedure FinalizeFreezeEnd(var Info: TFreezeInfo; CurrentTick: Integer);
+begin
+  Info.IsFrozen := False;
+  Info.FreezeType := ftNone;
+  Info.FreezeDurationTicks := 0;
+  Info.FreezeEndTick := CurrentTick;
+  Info.TicksRemaining := 0;
+  Info.ImmunityStartTick := CurrentTick;
+  Info.ImmunityEndTick := CurrentTick + FREEZE_IMMUNITY_TICKS;
+  Info.RecentlyFrozenUntilTick := CurrentTick + RECENTLY_FROZEN_TICKS;
+end;
+
+{------------------------------------------------------------------------------}
+{ InitFreezeInfo - initialize deterministic defaults                            }
+{------------------------------------------------------------------------------}
+procedure InitFreezeInfo(var Info: TFreezeInfo);
+begin
+  Info.IsFrozen := False;
+  Info.FreezeType := ftNone;
+  Info.FreezeStartTick := 0;
+  Info.FreezeDurationTicks := 0;
+  Info.FreezeEndTick := 0;
+  Info.TicksRemaining := 0;
+  Info.ImmunityStartTick := -9999;
+  Info.ImmunityEndTick := -9999;
+  Info.RecentlyFrozenUntilTick := -9999;
+  Info.LastFreezeSource := 'none';
+  Info.LastFreezeDetectTick := -9999;
+end;
+
+{------------------------------------------------------------------------------}
 { InitFreezeDetection - Initialize the freeze detection system                 }
 {------------------------------------------------------------------------------}
 procedure InitFreezeDetection;
 begin
-  FreezeDetectionState.PlayerFreeze.IsFrozen := False;
-  FreezeDetectionState.PlayerFreeze.FreezeType := ftNone;
-  FreezeDetectionState.PlayerFreeze.FreezeStartTick := 0;
-  FreezeDetectionState.PlayerFreeze.FreezeDurationTicks := 0;
-  FreezeDetectionState.PlayerFreeze.FreezeEndTick := 0;
-  FreezeDetectionState.PlayerFreeze.TicksRemaining := 0;
-  
-  FreezeDetectionState.OpponentFreeze.IsFrozen := False;
-  FreezeDetectionState.OpponentFreeze.FreezeType := ftNone;
-  FreezeDetectionState.OpponentFreeze.FreezeStartTick := 0;
-  FreezeDetectionState.OpponentFreeze.FreezeDurationTicks := 0;
-  FreezeDetectionState.OpponentFreeze.FreezeEndTick := 0;
-  FreezeDetectionState.OpponentFreeze.TicksRemaining := 0;
-  
+  InitFreezeInfo(FreezeDetectionState.PlayerFreeze);
+  InitFreezeInfo(FreezeDetectionState.OpponentFreeze);
+
   FreezeDetectionState.LastPlayerPosition := Point(0, 0);
   FreezeDetectionState.LastOpponentPosition := Point(0, 0);
   FreezeDetectionState.PositionUnchangedTicks := 0;
   FreezeDetectionState.OpponentPositionUnchangedTicks := 0;
+  FreezeDetectionState.LastOpponentFreezeCastTick := -9999;
+  FreezeDetectionState.LastPlayerFreezeCastTick := -9999;
+  FreezeDetectionState.LastPlayerPotentialHitTick := -9999;
+  FreezeDetectionState.LastOpponentPotentialHitTick := -9999;
   FreezeDetectionState.IsInitialized := True;
-  
+
   WriteLn('[FreezeDetection] Initialized');
 end;
 
@@ -198,6 +371,9 @@ procedure ApplyFreezeToPlayer(FreezeType: TFreezeType; CurrentTick: Integer);
 var
   Duration: Integer;
 begin
+  if InFreezeImmunityWindow(FreezeDetectionState.PlayerFreeze, CurrentTick) then
+    Exit;
+
   Duration := GetFreezeDuration(FreezeType);
   FreezeDetectionState.PlayerFreeze.IsFrozen := True;
   FreezeDetectionState.PlayerFreeze.FreezeType := FreezeType;
@@ -205,12 +381,19 @@ begin
   FreezeDetectionState.PlayerFreeze.FreezeDurationTicks := Duration;
   FreezeDetectionState.PlayerFreeze.FreezeEndTick := CurrentTick + Duration;
   FreezeDetectionState.PlayerFreeze.TicksRemaining := Duration;
+  FreezeDetectionState.PlayerFreeze.ImmunityStartTick := -9999;
+  FreezeDetectionState.PlayerFreeze.ImmunityEndTick := -9999;
+  FreezeDetectionState.PlayerFreeze.RecentlyFrozenUntilTick :=
+    CurrentTick + RECENTLY_FROZEN_TICKS;
 end;
 
 procedure ApplyFreezeToOpponent(FreezeType: TFreezeType; CurrentTick: Integer);
 var
   Duration: Integer;
 begin
+  if InFreezeImmunityWindow(FreezeDetectionState.OpponentFreeze, CurrentTick) then
+    Exit;
+
   Duration := GetFreezeDuration(FreezeType);
   FreezeDetectionState.OpponentFreeze.IsFrozen := True;
   FreezeDetectionState.OpponentFreeze.FreezeType := FreezeType;
@@ -218,6 +401,63 @@ begin
   FreezeDetectionState.OpponentFreeze.FreezeDurationTicks := Duration;
   FreezeDetectionState.OpponentFreeze.FreezeEndTick := CurrentTick + Duration;
   FreezeDetectionState.OpponentFreeze.TicksRemaining := Duration;
+  FreezeDetectionState.OpponentFreeze.ImmunityStartTick := -9999;
+  FreezeDetectionState.OpponentFreeze.ImmunityEndTick := -9999;
+  FreezeDetectionState.OpponentFreeze.RecentlyFrozenUntilTick :=
+    CurrentTick + RECENTLY_FROZEN_TICKS;
+end;
+
+{------------------------------------------------------------------------------}
+{ RefreshFreezeBySignal - multi-signal application/refresh                      }
+{------------------------------------------------------------------------------}
+procedure RefreshFreezeBySignal(var Info: TFreezeInfo; FreezeType: TFreezeType;
+  CurrentTick: Integer; SignalSource: String);
+var
+  Duration: Integer;
+begin
+  if InFreezeImmunityWindow(Info, CurrentTick) then
+    Exit;
+
+  Duration := GetFreezeDuration(FreezeType);
+
+  if not Info.IsFrozen then
+  begin
+    Info.IsFrozen := True;
+    Info.FreezeStartTick := CurrentTick;
+    Info.FreezeDurationTicks := Duration;
+    Info.FreezeEndTick := CurrentTick + Duration;
+    Info.TicksRemaining := Duration;
+  end
+  else if (CurrentTick - Info.LastFreezeDetectTick) <= 1 then
+  begin
+    { Re-freeze extension is only allowed on a very close timing signal. }
+    if (CurrentTick + Duration) > Info.FreezeEndTick then
+      Info.FreezeEndTick := CurrentTick + Duration;
+    Info.FreezeDurationTicks := Info.FreezeEndTick - Info.FreezeStartTick;
+  end;
+
+  Info.FreezeType := FreezeType;
+  Info.LastFreezeSource := SignalSource;
+  Info.LastFreezeDetectTick := CurrentTick;
+  Info.RecentlyFrozenUntilTick := CurrentTick + RECENTLY_FROZEN_TICKS;
+end;
+
+{------------------------------------------------------------------------------}
+{ UpdateFreezeTimers - deterministic timer transitions                          }
+{------------------------------------------------------------------------------}
+procedure UpdateFreezeTimers(var Info: TFreezeInfo; CurrentTick: Integer);
+begin
+  if Info.IsFrozen then
+  begin
+    Info.TicksRemaining := Info.FreezeEndTick - CurrentTick;
+    if Info.TicksRemaining <= 0 then
+      FinalizeFreezeEnd(Info, CurrentTick);
+  end
+  else
+  begin
+    Info.TicksRemaining := 0;
+    { immunity naturally expires via CurrentTick comparisons }
+  end;
 end;
 
 {------------------------------------------------------------------------------}
@@ -227,96 +467,137 @@ procedure UpdateFreezeDetection;
 var
   CurrentTick: Integer;
   MyGraphic, OppGraphic: Integer;
+  MyAnim, OppAnim: Integer;
   MyTile, OppTile: TPoint;
   DetectedFreezeType: TFreezeType;
+  ProjectileId: Integer;
+  PlayerSignals, OppSignals: Integer;
 begin
   if not FreezeDetectionState.IsInitialized then
     Exit;
-  
+
   CurrentTick := GetCurrentTick;
-  
-  { Get current graphics and positions from game }
+
+  { Get current graphics/animations/positions from game }
   MyGraphic := GetMyGraphic;
   OppGraphic := GetOpponentGraphic;
+  MyAnim := GetMyAnimation;
+  OppAnim := GetOpponentAnimation;
   MyTile := GetMyTile;
   OppTile := GetOpponentTile;
-  
-  { === PLAYER FREEZE DETECTION === }
-  { Detect new freeze: graphic matches freeze ID }
+
+  if IsFreezeCastAnimation(OppAnim) then
+    FreezeDetectionState.LastOpponentFreezeCastTick := CurrentTick;
+  if IsFreezeCastAnimation(MyAnim) then
+    FreezeDetectionState.LastPlayerFreezeCastTick := CurrentTick;
+
+  { Position-derived hit timing proxy for freeze landing windows }
+  if (MyTile.X = FreezeDetectionState.LastPlayerPosition.X) and
+     (MyTile.Y = FreezeDetectionState.LastPlayerPosition.Y) then
+    Inc(FreezeDetectionState.PositionUnchangedTicks)
+  else
+    FreezeDetectionState.PositionUnchangedTicks := 0;
+
+  if (OppTile.X = FreezeDetectionState.LastOpponentPosition.X) and
+     (OppTile.Y = FreezeDetectionState.LastOpponentPosition.Y) then
+    Inc(FreezeDetectionState.OpponentPositionUnchangedTicks)
+  else
+    FreezeDetectionState.OpponentPositionUnchangedTicks := 0;
+
+  FreezeDetectionState.LastPlayerPosition := MyTile;
+  FreezeDetectionState.LastOpponentPosition := OppTile;
+
+  { === PLAYER FREEZE DETECTION (incoming from opponent) === }
+  PlayerSignals := 0;
+
   if IsFreezeGraphic(MyGraphic) then
   begin
+    Inc(PlayerSignals);
     DetectedFreezeType := GraphicToFreezeType(MyGraphic);
-    { Only apply if not already frozen or if re-frozen (new freeze) }
-    if not FreezeDetectionState.PlayerFreeze.IsFrozen then
-      ApplyFreezeToPlayer(DetectedFreezeType, CurrentTick)
-    else
-    begin
-      { Extend or refresh freeze if we see the graphic again }
-      FreezeDetectionState.PlayerFreeze.FreezeEndTick := CurrentTick + 
-        GetFreezeDuration(DetectedFreezeType);
-      FreezeDetectionState.PlayerFreeze.FreezeType := DetectedFreezeType;
-    end;
+    RefreshFreezeBySignal(FreezeDetectionState.PlayerFreeze,
+      DetectedFreezeType, CurrentTick, 'gfx');
   end
   else
+    DetectedFreezeType := ftIceBarrage;
+
+  if IsFreezeCastAnimation(OppAnim) then
   begin
-    { Check movement: if player moved while "frozen", they may have unfrozen }
-    if (MyTile.X = FreezeDetectionState.LastPlayerPosition.X) and
-       (MyTile.Y = FreezeDetectionState.LastPlayerPosition.Y) then
-      Inc(FreezeDetectionState.PositionUnchangedTicks)
-    else
-      FreezeDetectionState.PositionUnchangedTicks := 0;
-    
-    FreezeDetectionState.LastPlayerPosition := MyTile;
+    Inc(PlayerSignals);
+    FreezeDetectionState.PlayerFreeze.LastFreezeSource := 'spell';
+    if IsFreezeWeaponAnimation(OppAnim) then
+      FreezeDetectionState.PlayerFreeze.LastFreezeSource := 'weapon';
   end;
-  
-  { === OPPONENT FREEZE DETECTION === }
+
+  ProjectileId := GetDetectedProjectileId(True, CurrentTick);
+  if IsFreezeProjectile(ProjectileId) then
+  begin
+    Inc(PlayerSignals);
+    FreezeDetectionState.PlayerFreeze.LastFreezeSource := 'projectile';
+  end;
+
+======
+  if (FreezeDetectionState.PositionUnchangedTicks >= 1) and
+     ((CurrentTick - FreezeDetectionState.LastOpponentFreezeCastTick) <= 1) then
+  begin
+    Inc(PlayerSignals);
+    FreezeDetectionState.LastPlayerPotentialHitTick := CurrentTick;
+    if not IsFreezeGraphic(MyGraphic) and (PlayerSignals >= 2) then
+      RefreshFreezeBySignal(FreezeDetectionState.PlayerFreeze,
+        DetectedFreezeType, CurrentTick, 'hitsplat');
+  end;
+
+  { animation+projectile fallback when gfx packet is missed }
+  if (not FreezeDetectionState.PlayerFreeze.IsFrozen) and
+     (PlayerSignals >= 2) and
+     ((CurrentTick - FreezeDetectionState.LastOpponentFreezeCastTick) <= 1) then
+    RefreshFreezeBySignal(FreezeDetectionState.PlayerFreeze,
+      DetectedFreezeType, CurrentTick, 'animation');
+
+  { === OPPONENT FREEZE DETECTION (incoming from player) === }
+  OppSignals := 0;
+
   if IsFreezeGraphic(OppGraphic) then
   begin
+    Inc(OppSignals);
     DetectedFreezeType := GraphicToFreezeType(OppGraphic);
-    if not FreezeDetectionState.OpponentFreeze.IsFrozen then
-      ApplyFreezeToOpponent(DetectedFreezeType, CurrentTick)
-    else
-    begin
-      FreezeDetectionState.OpponentFreeze.FreezeEndTick := CurrentTick + 
-        GetFreezeDuration(DetectedFreezeType);
-      FreezeDetectionState.OpponentFreeze.FreezeType := DetectedFreezeType;
-    end;
+    RefreshFreezeBySignal(FreezeDetectionState.OpponentFreeze,
+      DetectedFreezeType, CurrentTick, 'gfx');
   end
   else
+    DetectedFreezeType := ftIceBarrage;
+
+  if IsFreezeCastAnimation(MyAnim) then
   begin
-    if (OppTile.X = FreezeDetectionState.LastOpponentPosition.X) and
-       (OppTile.Y = FreezeDetectionState.LastOpponentPosition.Y) then
-      Inc(FreezeDetectionState.OpponentPositionUnchangedTicks)
-    else
-      FreezeDetectionState.OpponentPositionUnchangedTicks := 0;
-    
-    FreezeDetectionState.LastOpponentPosition := OppTile;
-  end;
-  
-  { === DECREMENT TIMERS (tick-based) === }
-  if FreezeDetectionState.PlayerFreeze.IsFrozen then
+    Inc(OppSignals);
+    FreezeDetectionState.OpponentFreeze.LastFreezeSource := 'spell';
+
+    if IsFreezeWeaponAnimation(MyAnim) then
+      FreezeDetectionState.OpponentFreeze.LastFreezeSource := 'weapon';
+
+  ProjectileId := GetDetectedProjectileId(False, CurrentTick);
+  if IsFreezeProjectile(ProjectileId) then
   begin
-    FreezeDetectionState.PlayerFreeze.TicksRemaining := 
-      FreezeDetectionState.PlayerFreeze.FreezeEndTick - CurrentTick;
-    
-    if FreezeDetectionState.PlayerFreeze.TicksRemaining <= 0 then
-    begin
-      FreezeDetectionState.PlayerFreeze.IsFrozen := False;
-      FreezeDetectionState.PlayerFreeze.FreezeType := ftNone;
-      FreezeDetectionState.PlayerFreeze.TicksRemaining := 0;
-    end;
+    Inc(OppSignals);
+    FreezeDetectionState.OpponentFreeze.LastFreezeSource := 'projectile';
   end;
-  
-  if FreezeDetectionState.OpponentFreeze.IsFrozen then
+
+  if (FreezeDetectionState.OpponentPositionUnchangedTicks >= 1) and
+     ((CurrentTick - FreezeDetectionState.LastPlayerFreezeCastTick) <= 1) then
   begin
-    FreezeDetectionState.OpponentFreeze.TicksRemaining := 
-      FreezeDetectionState.OpponentFreeze.FreezeEndTick - CurrentTick;
-    
-    if FreezeDetectionState.OpponentFreeze.TicksRemaining <= 0 then
-    begin
-      FreezeDetectionState.OpponentFreeze.IsFrozen := False;
-      FreezeDetectionState.OpponentFreeze.FreezeType := ftNone;
-      FreezeDetectionState.OpponentFreeze.TicksRemaining := 0;
-    end;
+    Inc(OppSignals);
+    FreezeDetectionState.LastOpponentPotentialHitTick := CurrentTick;
+    if not IsFreezeGraphic(OppGraphic) and (OppSignals >= 2) then
+      RefreshFreezeBySignal(FreezeDetectionState.OpponentFreeze,
+        DetectedFreezeType, CurrentTick, 'hitsplat');
   end;
+
+  if (not FreezeDetectionState.OpponentFreeze.IsFrozen) and
+     (OppSignals >= 2) and
+     ((CurrentTick - FreezeDetectionState.LastPlayerFreezeCastTick) <= 1) then
+    RefreshFreezeBySignal(FreezeDetectionState.OpponentFreeze,
+      DetectedFreezeType, CurrentTick, 'animation');
+
+  { === TIMER + LIFECYCLE UPDATES === }
+  UpdateFreezeTimers(FreezeDetectionState.PlayerFreeze, CurrentTick);
+  UpdateFreezeTimers(FreezeDetectionState.OpponentFreeze, CurrentTick);
 end;

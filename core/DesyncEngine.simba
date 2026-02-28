@@ -1,9 +1,7 @@
 {==============================================================================}
 {  OmniPK Engine - DesyncEngine Module                                         }
-{  Calculates tick desync advantage/disadvantage.                              }
+{  Calculates tick desync magnitude/opportunity from action streams.           }
 {  NO DRAWING - Logic only.                                                    }
-{  Uses: GameAPI (GetMyLastAttackTick, GetMyLastMoveTick, GetOpponentLastMoveTick)}
-{        AttackStyleDetector (GetOpponentLastAttackTick), TickTracker           }
 {==============================================================================}
 
 {$DEFINE OMNIPK_DESYNCENGINE}
@@ -20,16 +18,25 @@ type
     LastMeasuredTick: Integer;
   end;
 
+  TActionSample = record
+    Tick: Integer;
+    IsAttack: Boolean;
+  end;
+
+  TActionSampleArray = array of TActionSample;
+
   TDesyncEngineState = record
     CurrentDesync: TDesyncInfo;
     MyAttackTick: Integer;
     OppAttackTick: Integer;
     MyMoveTick: Integer;
     OppMoveTick: Integer;
-    ServerTickEstimate: Integer;
     PingMs: Integer;
+    OpportunityScore: Double;
     HasAdvantage: Boolean;
     DesyncHistory: array of Integer;
+    MyActionStream: TActionSampleArray;
+    OppActionStream: TActionSampleArray;
     IsInitialized: Boolean;
   end;
 
@@ -37,88 +44,87 @@ var
   DesyncEngineState: TDesyncEngineState;
 
 const
-  MAX_DESYNC_HISTORY = 10;
+  MAX_DESYNC_HISTORY = 14;
+  MAX_ACTION_STREAM = 24;
 
-{------------------------------------------------------------------------------}
-{ GetTickOffset - Returns tick offset (positive = ahead)                       }
-{------------------------------------------------------------------------------}
 function GetTickOffset: Integer;
 begin
   Result := DesyncEngineState.CurrentDesync.TickOffset;
 end;
 
-{------------------------------------------------------------------------------}
-{ HasDesyncAdvantage - Returns true if player has desync advantage             }
-{------------------------------------------------------------------------------}
 function HasDesyncAdvantage: Boolean;
 begin
   Result := DesyncEngineState.HasAdvantage;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetDesyncDirection - Returns desync direction                                }
-{------------------------------------------------------------------------------}
 function GetDesyncDirection: TDesyncDirection;
 begin
   Result := DesyncEngineState.CurrentDesync.Direction;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetDesyncConfidence - Returns confidence in desync measurement               }
-{------------------------------------------------------------------------------}
 function GetDesyncConfidence: Double;
 begin
   Result := DesyncEngineState.CurrentDesync.ConfidenceLevel;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetEstimatedPing - Returns estimated ping in milliseconds                    }
-{------------------------------------------------------------------------------}
 function GetEstimatedPing: Integer;
 begin
   Result := DesyncEngineState.PingMs;
 end;
 
-{------------------------------------------------------------------------------}
-{ RecordPlayerAction - Record when player performed an action                  }
-{------------------------------------------------------------------------------}
+function GetDesyncOpportunityScore: Double;
+begin
+  Result := DesyncEngineState.OpportunityScore;
+end;
+
+procedure PushActionSample(var Stream: TActionSampleArray; Tick: Integer; IsAttack: Boolean);
+var
+  Len: Integer;
+begin
+  Len := Length(Stream);
+  if Len >= MAX_ACTION_STREAM then
+  begin
+    Move(Stream[1], Stream[0], (Len - 1) * SizeOf(TActionSample));
+    Len := MAX_ACTION_STREAM - 1;
+  end;
+  SetLength(Stream, Len + 1);
+  Stream[Len].Tick := Tick;
+  Stream[Len].IsAttack := IsAttack;
+end;
+
 procedure RecordPlayerAction;
 begin
   DesyncEngineState.MyAttackTick := GetCurrentTick;
   DesyncEngineState.MyMoveTick := GetCurrentTick;
+  PushActionSample(DesyncEngineState.MyActionStream, GetCurrentTick, True);
 end;
 
-{------------------------------------------------------------------------------}
-{ RecordOpponentAction - Record when opponent action was observed              }
-{------------------------------------------------------------------------------}
 procedure RecordOpponentAction;
 begin
   DesyncEngineState.OppAttackTick := GetCurrentTick;
   DesyncEngineState.OppMoveTick := GetCurrentTick;
+  PushActionSample(DesyncEngineState.OppActionStream, GetCurrentTick, True);
 end;
 
-{------------------------------------------------------------------------------}
-{ CalculateDesync - Calculate tick offset from action timing                   }
-{------------------------------------------------------------------------------}
+function GetLatestTick(AttackTick, MoveTick: Integer): Integer;
+begin
+  Result := AttackTick;
+  if MoveTick > Result then Result := MoveTick;
+end;
+
 procedure CalculateDesync;
 var
   Offset, AvgOffset, Len, i: Integer;
   MyLatest, OppLatest: Integer;
+  ConsistentCount: Integer;
 begin
-  { Use most recent of attack/move for each side }
-  MyLatest := DesyncEngineState.MyAttackTick;
-  if DesyncEngineState.MyMoveTick > MyLatest then
-    MyLatest := DesyncEngineState.MyMoveTick;
-  
-  OppLatest := DesyncEngineState.OppAttackTick;
-  if DesyncEngineState.OppMoveTick > OppLatest then
-    OppLatest := DesyncEngineState.OppMoveTick;
-  
+  MyLatest := GetLatestTick(DesyncEngineState.MyAttackTick, DesyncEngineState.MyMoveTick);
+  OppLatest := GetLatestTick(DesyncEngineState.OppAttackTick, DesyncEngineState.OppMoveTick);
+
   if (MyLatest <= 0) or (OppLatest <= 0) then Exit;
-  
-  { Offset: positive = we acted before them (we're ahead) }
+
   Offset := OppLatest - MyLatest;
-  
+
   Len := Length(DesyncEngineState.DesyncHistory);
   if Len >= MAX_DESYNC_HISTORY then
   begin
@@ -129,42 +135,79 @@ begin
   end;
   SetLength(DesyncEngineState.DesyncHistory, Len + 1);
   DesyncEngineState.DesyncHistory[Len] := Offset;
-  
+
   AvgOffset := 0;
   for i := 0 to High(DesyncEngineState.DesyncHistory) do
     AvgOffset := AvgOffset + DesyncEngineState.DesyncHistory[i];
-  if Length(DesyncEngineState.DesyncHistory) > 0 then
-    AvgOffset := AvgOffset div Length(DesyncEngineState.DesyncHistory);
-  
+  AvgOffset := AvgOffset div Length(DesyncEngineState.DesyncHistory);
+
   DesyncEngineState.CurrentDesync.TickOffset := AvgOffset;
   DesyncEngineState.CurrentDesync.LastMeasuredTick := GetCurrentTick;
-  
+
   if AvgOffset > 0 then
     DesyncEngineState.CurrentDesync.Direction := ddAhead
   else if AvgOffset < 0 then
     DesyncEngineState.CurrentDesync.Direction := ddBehind
   else
     DesyncEngineState.CurrentDesync.Direction := ddNone;
-  
+
   DesyncEngineState.HasAdvantage := AvgOffset > 0;
-  
-  if Length(DesyncEngineState.DesyncHistory) >= 5 then
-    DesyncEngineState.CurrentDesync.ConfidenceLevel := 0.8
-  else
-    DesyncEngineState.CurrentDesync.ConfidenceLevel := 0.3;
+
+  ConsistentCount := 0;
+  for i := 0 to High(DesyncEngineState.DesyncHistory) do
+  begin
+    if ((DesyncEngineState.DesyncHistory[i] >= 0) and (AvgOffset >= 0)) or
+       ((DesyncEngineState.DesyncHistory[i] <= 0) and (AvgOffset <= 0)) then
+      Inc(ConsistentCount);
+  end;
+
+  DesyncEngineState.CurrentDesync.ConfidenceLevel :=
+    (Length(DesyncEngineState.DesyncHistory) / MAX_DESYNC_HISTORY) * 0.4 +
+    (ConsistentCount / Length(DesyncEngineState.DesyncHistory)) * 0.6;
+  if DesyncEngineState.CurrentDesync.ConfidenceLevel > 1.0 then
+    DesyncEngineState.CurrentDesync.ConfidenceLevel := 1.0;
+
+  DesyncEngineState.OpportunityScore := Abs(AvgOffset) * 0.35 +
+    DesyncEngineState.CurrentDesync.ConfidenceLevel * 0.65;
+  if DesyncEngineState.OpportunityScore > 1.0 then
+    DesyncEngineState.OpportunityScore := 1.0;
 end;
 
-{------------------------------------------------------------------------------}
-{ EstimatePing - Estimate ping from action feedback                            }
-{------------------------------------------------------------------------------}
 procedure EstimatePing;
+var
+  PairCount, DeltaTick: Integer;
+  MyIdx, OppIdx: Integer;
+  SumTickDelta: Integer;
 begin
-  DesyncEngineState.PingMs := 50;
+  SumTickDelta := 0;
+  PairCount := 0;
+
+  MyIdx := High(DesyncEngineState.MyActionStream);
+  OppIdx := High(DesyncEngineState.OppActionStream);
+
+  while (MyIdx >= 0) and (OppIdx >= 0) do
+  begin
+    DeltaTick := Abs(DesyncEngineState.MyActionStream[MyIdx].Tick -
+      DesyncEngineState.OppActionStream[OppIdx].Tick);
+    SumTickDelta := SumTickDelta + DeltaTick;
+    Inc(PairCount);
+    Dec(MyIdx);
+    Dec(OppIdx);
+    if PairCount >= 8 then Break;
+  end;
+
+  if PairCount > 0 then
+    DesyncEngineState.PingMs := (SumTickDelta div PairCount) * GetTickMs
+  else
+    DesyncEngineState.PingMs := 0;
+
+  if DesyncEngineState.PingMs < 0 then DesyncEngineState.PingMs := 0;
+
+  { Tick-based floor to avoid reporting perfect zero unless no data. }
+  if (PairCount > 0) and (DesyncEngineState.PingMs = 0) then
+    DesyncEngineState.PingMs := GetTickMs div 2;
 end;
 
-{------------------------------------------------------------------------------}
-{ InitDesyncEngine - Initialize the desync engine system                       }
-{------------------------------------------------------------------------------}
 procedure InitDesyncEngine;
 begin
   DesyncEngineState.CurrentDesync.TickOffset := 0;
@@ -175,43 +218,63 @@ begin
   DesyncEngineState.OppAttackTick := 0;
   DesyncEngineState.MyMoveTick := 0;
   DesyncEngineState.OppMoveTick := 0;
-  DesyncEngineState.ServerTickEstimate := 0;
-  DesyncEngineState.PingMs := 50;
+  DesyncEngineState.PingMs := 0;
+  DesyncEngineState.OpportunityScore := 0.0;
   DesyncEngineState.HasAdvantage := False;
   SetLength(DesyncEngineState.DesyncHistory, 0);
+  SetLength(DesyncEngineState.MyActionStream, 0);
+  SetLength(DesyncEngineState.OppActionStream, 0);
   DesyncEngineState.IsInitialized := True;
-  
+
   WriteLn('[DesyncEngine] Initialized');
 end;
 
-{------------------------------------------------------------------------------}
-{ UpdateDesyncEngine - Update desync calculations (call every frame)           }
-{------------------------------------------------------------------------------}
 procedure UpdateDesyncEngine;
 var
   MyAttack, MyMove, OppAttack, OppMove: Int64;
-  CurrentTick: Integer;
+  TickNow: Integer;
 begin
   if not DesyncEngineState.IsInitialized then Exit;
-  
-  CurrentTick := GetCurrentTick;
-  
-  { Pull action ticks from GameAPI and AttackStyleDetector }
+
+  TickNow := GetCurrentTick;
+
   MyAttack := GetMyLastAttackTick;
   MyMove := GetMyLastMoveTick;
   OppMove := GetOpponentLastMoveTick;
   OppAttack := GetOpponentLastAttackTick;
-  
-  if MyAttack > 0 then DesyncEngineState.MyAttackTick := MyAttack;
-  if MyMove > 0 then DesyncEngineState.MyMoveTick := MyMove;
-  if OppMove > 0 then DesyncEngineState.OppMoveTick := OppMove;
-  if OppAttack > 0 then DesyncEngineState.OppAttackTick := OppAttack;
-  
-  if (DesyncEngineState.MyAttackTick > 0) or (DesyncEngineState.MyMoveTick > 0) then
+
+  if (MyAttack > 0) and (MyAttack <> DesyncEngineState.MyAttackTick) then
   begin
-    if (DesyncEngineState.OppAttackTick > 0) or (DesyncEngineState.OppMoveTick > 0) then
-      CalculateDesync;
+    DesyncEngineState.MyAttackTick := MyAttack;
+    PushActionSample(DesyncEngineState.MyActionStream, Integer(MyAttack), True);
   end;
-  
+
+  if (MyMove > 0) and (MyMove <> DesyncEngineState.MyMoveTick) then
+  begin
+    DesyncEngineState.MyMoveTick := MyMove;
+    PushActionSample(DesyncEngineState.MyActionStream, Integer(MyMove), False);
+  end;
+
+  if (OppAttack > 0) and (OppAttack <> DesyncEngineState.OppAttackTick) then
+  begin
+    DesyncEngineState.OppAttackTick := OppAttack;
+    PushActionSample(DesyncEngineState.OppActionStream, Integer(OppAttack), True);
+  end;
+
+  if (OppMove > 0) and (OppMove <> DesyncEngineState.OppMoveTick) then
+  begin
+    DesyncEngineState.OppMoveTick := OppMove;
+    PushActionSample(DesyncEngineState.OppActionStream, Integer(OppMove), False);
+  end;
+
+  if (Length(DesyncEngineState.MyActionStream) > 0) and
+     (Length(DesyncEngineState.OppActionStream) > 0) then
+    CalculateDesync;
+
   EstimatePing;
+
+  { If no stream activity for >12 ticks, decay confidence deterministically. }
+  if (TickNow - DesyncEngineState.CurrentDesync.LastMeasuredTick) > 12 then
+    DesyncEngineState.CurrentDesync.ConfidenceLevel :=
+      DesyncEngineState.CurrentDesync.ConfidenceLevel * 0.8;
 end;

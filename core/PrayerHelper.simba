@@ -31,15 +31,19 @@ type
     LastSwapTick: Integer;
     SwapCooldownTicks: Integer;
     IsPrayerMismatch: Boolean;
+    LastPrayerChangeTick: Integer;
+    LastObservedPrayer: TPrayerType;
+    OppAttackRhythm: Integer;
+    LastOppAttackTickSeen: Integer;
+    PredictedHitTick: Integer;
+    IsFlickingState: Boolean;
+    IsOffTickState: Boolean;
     IsInitialized: Boolean;
   end;
 
 var
   PrayerHelperState: TPrayerHelperState;
 
-{------------------------------------------------------------------------------}
-{ StringToPrayerType - Map game prayer string to TPrayerType                   }
-{------------------------------------------------------------------------------}
 function StringToPrayerType(S: String): TPrayerType;
 begin
   case LowerCase(S) of
@@ -51,29 +55,36 @@ begin
   end;
 end;
 
-{------------------------------------------------------------------------------}
-{ RecommendedPrayer - Returns the recommended protection prayer                }
-{------------------------------------------------------------------------------}
 function RecommendedPrayer: TPrayerType;
 begin
-  Result := PrayerHelperState.RecommendedPrayer;
+  Result := recommendedPrayer;
 end;
 
-{------------------------------------------------------------------------------}
-{ ShouldAutoSwap - Returns true if prayer should be swapped now                }
-{------------------------------------------------------------------------------}
+function IsFlicking: Boolean;
+begin
+  Result := PrayerHelperState.IsFlickingState;
+end;
+
+function IsOffTick: Boolean;
+begin
+  Result := PrayerHelperState.IsOffTickState;
+end;
+
+
+function GetPredictedHitTick: Integer;
+begin
+  Result := PrayerHelperState.PredictedHitTick;
+end;
+
 function ShouldAutoSwap: Boolean;
 var
   TicksSinceSwap: Integer;
 begin
   TicksSinceSwap := GetCurrentTick - PrayerHelperState.LastSwapTick;
-  Result := PrayerHelperState.ShouldSwap and 
+  Result := PrayerHelperState.ShouldSwap and
             (TicksSinceSwap >= PrayerHelperState.SwapCooldownTicks);
 end;
 
-{------------------------------------------------------------------------------}
-{ AutoSwapPrayer - Returns target prayer for swap (external system executes)   }
-{------------------------------------------------------------------------------}
 function AutoSwapPrayer: TPrayerType;
 begin
   Result := PrayerHelperState.RecommendedPrayer;
@@ -84,33 +95,21 @@ begin
   end;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetCurrentPrayer - Returns currently active protection prayer                }
-{------------------------------------------------------------------------------}
 function GetCurrentPrayer: TPrayerType;
 begin
   Result := PrayerHelperState.CurrentPrayer;
 end;
 
-{------------------------------------------------------------------------------}
-{ IsPrayerMismatch - Returns true if wrong prayer is active                    }
-{------------------------------------------------------------------------------}
 function IsPrayerMismatch: Boolean;
 begin
   Result := PrayerHelperState.IsPrayerMismatch;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetPrayerPoints - Returns current prayer points                              }
-{------------------------------------------------------------------------------}
 function GetPrayerPoints: Integer;
 begin
   Result := PrayerHelperState.PrayerPoints;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetPrayerDrainRate - Returns total prayer drain per tick                     }
-{------------------------------------------------------------------------------}
 function GetPrayerDrainRate: Double;
 var
   i: Integer;
@@ -121,9 +120,6 @@ begin
       Result := Result + PrayerHelperState.ActivePrayers[i].DrainRate;
 end;
 
-{------------------------------------------------------------------------------}
-{ GetProtectionPrayerForStyle - Returns protection prayer for attack style     }
-{------------------------------------------------------------------------------}
 function GetProtectionPrayerForStyle(Style: TAttackStyle): TPrayerType;
 begin
   case Style of
@@ -135,9 +131,38 @@ begin
   end;
 end;
 
-{------------------------------------------------------------------------------}
-{ InitPrayerHelper - Initialize the prayer helper system                       }
-{------------------------------------------------------------------------------}
+procedure UpdateAttackRhythm(CurrentTick: Integer);
+var
+  OppTick, Delta: Integer;
+begin
+  OppTick := GetOpponentLastAttackTick;
+  if (OppTick > 0) and (OppTick <> PrayerHelperState.LastOppAttackTickSeen) then
+  begin
+    if PrayerHelperState.LastOppAttackTickSeen > 0 then
+    begin
+      Delta := OppTick - PrayerHelperState.LastOppAttackTickSeen;
+      if Delta > 0 then
+      begin
+        if PrayerHelperState.OppAttackRhythm <= 0 then
+          PrayerHelperState.OppAttackRhythm := Delta
+        else
+          PrayerHelperState.OppAttackRhythm :=
+            (PrayerHelperState.OppAttackRhythm * 2 + Delta) div 3;
+      end;
+    end;
+    PrayerHelperState.LastOppAttackTickSeen := OppTick;
+  end;
+
+  if PrayerHelperState.OppAttackRhythm <= 0 then
+    PrayerHelperState.OppAttackRhythm := 4;
+
+  PrayerHelperState.PredictedHitTick :=
+    PrayerHelperState.LastOppAttackTickSeen + PrayerHelperState.OppAttackRhythm;
+
+  if PrayerHelperState.PredictedHitTick < CurrentTick then
+    PrayerHelperState.PredictedHitTick := CurrentTick + GetAttackCooldownRemaining;
+end;
+
 procedure InitPrayerHelper;
 begin
   PrayerHelperState.CurrentPrayer := ptNone;
@@ -149,38 +174,63 @@ begin
   PrayerHelperState.LastSwapTick := 0;
   PrayerHelperState.SwapCooldownTicks := 1;
   PrayerHelperState.IsPrayerMismatch := False;
+  PrayerHelperState.LastPrayerChangeTick := -9999;
+  PrayerHelperState.LastObservedPrayer := ptNone;
+  PrayerHelperState.OppAttackRhythm := 4;
+  PrayerHelperState.LastOppAttackTickSeen := -9999;
+  PrayerHelperState.PredictedHitTick := -9999;
+  PrayerHelperState.IsFlickingState := False;
+  PrayerHelperState.IsOffTickState := False;
   PrayerHelperState.IsInitialized := True;
-  
+
   WriteLn('[PrayerHelper] Initialized');
 end;
 
-{------------------------------------------------------------------------------}
-{ UpdatePrayerHelper - Update prayer recommendations (call every frame)        }
-{------------------------------------------------------------------------------}
 procedure UpdatePrayerHelper;
 var
   OpponentStyle: TAttackStyle;
   ActiveStr: String;
+  CurrentTick: Integer;
+  TickToHit: Integer;
 begin
   if not PrayerHelperState.IsInitialized then Exit;
-  
-  { Read current prayer from game }
+
+  CurrentTick := GetCurrentTick;
+
   ActiveStr := GetActivePrayerString;
   PrayerHelperState.CurrentPrayer := StringToPrayerType(ActiveStr);
-  
-  { Get opponent's attack style from AttackStyleDetector }
-  OpponentStyle := GetOpponentAttackStyle;
-  
-  { Determine recommended prayer }
+
+  if PrayerHelperState.CurrentPrayer <> PrayerHelperState.LastObservedPrayer then
+  begin
+    PrayerHelperState.LastPrayerChangeTick := CurrentTick;
+    PrayerHelperState.LastObservedPrayer := PrayerHelperState.CurrentPrayer;
+  end;
+
+  OpponentStyle := GetLikelyNextStyle;
+  if OpponentStyle = asUnknown then
+    OpponentStyle := GetOpponentAttackStyle;
+
+  UpdateAttackRhythm(CurrentTick);
+  TickToHit := PrayerHelperState.PredictedHitTick - CurrentTick;
+
   PrayerHelperState.RecommendedPrayer := GetProtectionPrayerForStyle(OpponentStyle);
-  
-  { Check for prayer mismatch }
-  PrayerHelperState.IsPrayerMismatch := 
+
+  { align prayer to predicted hit tick: prefer to be on protection by hit-1 }
+  if (TickToHit <= 1) and (PrayerHelperState.RecommendedPrayer <> ptNone) then
+    PrayerHelperState.ShouldSwap := PrayerHelperState.CurrentPrayer <> PrayerHelperState.RecommendedPrayer
+  else
+    PrayerHelperState.ShouldSwap := False;
+
+  PrayerHelperState.IsPrayerMismatch :=
     (PrayerHelperState.CurrentPrayer <> PrayerHelperState.RecommendedPrayer) and
+    (PrayerHelperState.RecommendedPrayer <> ptNone) and
+    (TickToHit <= 1);
+
+  PrayerHelperState.IsFlickingState :=
+    (CurrentTick - PrayerHelperState.LastPrayerChangeTick) <= 1;
+
+  PrayerHelperState.IsOffTickState :=
+    (PrayerHelperState.PredictedHitTick > 0) and
+    (Abs((CurrentTick - 1) - PrayerHelperState.PredictedHitTick) > 1) and
     (PrayerHelperState.RecommendedPrayer <> ptNone);
-  
-  PrayerHelperState.ShouldSwap := PrayerHelperState.IsPrayerMismatch;
-  
-  { TODO: Read prayer points from game when API available }
-  { PrayerHelperState.PrayerPoints := GetPrayerPointsFromGame; }
 end;
